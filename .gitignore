@@ -3,3 +3,6 @@ target
 *~
 copter-report.html
 copter-report.md.md
+copter-failures.log
+.gitignore
+copter-report.md

@@ -18,6 +18,11 @@ lazy_static::lazy_static! {
     };
 }
 
+/// Get the shared crates.io API client
+pub fn get_client() -> &'static SyncClient {
+    &CRATES_IO_CLIENT
+}
+
 /// A reverse dependency (crate that depends on our crate)
 #[derive(Debug, Clone)]
 pub struct ReverseDependency {

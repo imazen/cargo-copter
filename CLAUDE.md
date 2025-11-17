@@ -92,6 +92,7 @@ See **[CONSOLE-FORMAT.md](CONSOLE-FORMAT.md)** for complete specification with 9
 --features <FEATURES>...     # Passed to cargo fetch/check/test
 -j, --jobs <N>               # Parallel testing
 --crate <NAME>               # Test published crate without local source
+--clean                      # Purge staging directory before running tests
 ```
 
 **Examples**:
@@ -117,6 +118,11 @@ cargo-copter --crate rgb --test-versions "0.8.48 0.8.50 0.8.51"
 ### Force test incompatible version
 ```bash
 cargo-copter --test-versions 0.7.0 --force-versions
+```
+
+### Clean cache and retest
+```bash
+cargo-copter --clean --top-dependents 5
 ```
 
 ## Next Steps

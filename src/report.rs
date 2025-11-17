@@ -244,23 +244,23 @@ pub fn print_table_footer() {
 
 /// Print an OfferedRow using the standard table format
 pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool) {
-    // Convert OfferedRow to column strings
-    let (offered_str, spec_str, resolved_str, dependent_str, result_str, time_str, color, error_details, multi_version_rows) = format_offered_row(row);
+    // Convert OfferedRow to formatted data
+    let formatted = format_offered_row(row);
 
     // Use dynamic widths
     let w = &*WIDTHS;
 
     // Print main row
-    let offered_display = truncate_with_padding(&offered_str, w.offered - 2);
-    let spec_display = truncate_with_padding(&spec_str, w.spec - 2);
-    let resolved_display = truncate_with_padding(&resolved_str, w.resolved - 2);
-    let dependent_display = truncate_with_padding(&dependent_str, w.dependent - 2);
-    let result_display = format!("{:>12} {:>5}", result_str, time_str);
+    let offered_display = truncate_with_padding(&formatted.offered, w.offered - 2);
+    let spec_display = truncate_with_padding(&formatted.spec, w.spec - 2);
+    let resolved_display = truncate_with_padding(&formatted.resolved, w.resolved - 2);
+    let dependent_display = truncate_with_padding(&formatted.dependent, w.dependent - 2);
+    let result_display = format!("{:>12} {:>5}", formatted.result, formatted.time);
     let result_display = truncate_with_padding(&result_display, w.result - 2);
 
     // Print main row with color
     if let Some(ref mut t) = term::stdout() {
-        let _ = t.fg(color);
+        let _ = t.fg(formatted.color);
         let _ = write!(t, "│ {} │", offered_display);
         let _ = write!(t, " {} │", spec_display);
         let _ = write!(t, " {} │", resolved_display);
@@ -274,7 +274,7 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool) {
     }
 
     // Print error details with dropped-panel border (if any)
-    if !error_details.is_empty() {
+    if !formatted.error_details.is_empty() {
         let corner1_width = w.spec;
         let corner2_width = w.dependent;
         let padding_width = w.spec + w.resolved + w.dependent  - corner1_width - corner2_width;
@@ -296,7 +296,7 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool) {
                     w_offered = w.offered, corner1 = corner1_width,
                     padding = padding_width, corner2 = corner2_width, w_result = w.result);
         }
-        for error_line in &error_details {
+        for error_line in &formatted.error_details {
             let truncated = truncate_with_padding(error_line, error_text_width);
             println!("│{:shortened_offered$}│ {} │",
                      "", truncated,
@@ -319,8 +319,8 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool) {
     }
 
     // Print multi-version rows with ├─ prefixes (if any)
-    if !multi_version_rows.is_empty() {
-        for (_i, (spec, resolved, dependent)) in multi_version_rows.iter().enumerate() {
+    if !formatted.multi_version_rows.is_empty() {
+        for (_i, (spec, resolved, dependent)) in formatted.multi_version_rows.iter().enumerate() {
             let spec_display = format!("├─ {}", spec);
             let spec_display = truncate_with_padding(&spec_display, w.spec - 2);
             let resolved_display = format!("├─ {}", resolved);
@@ -339,9 +339,21 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool) {
 // OfferedRow to renderable format conversion
 //
 
+/// Formatted row data ready for display
+pub struct FormattedRow {
+    pub offered: String,
+    pub spec: String,
+    pub resolved: String,
+    pub dependent: String,
+    pub result: String,
+    pub time: String,
+    pub color: Color,
+    pub error_details: Vec<String>,
+    pub multi_version_rows: Vec<(String, String, String)>,
+}
+
 /// Convert OfferedRow to renderable row data
-/// Returns: (offered_str, spec_str, resolved_str, dependent_str, result_str, time_str, color, error_details, multi_version_rows)
-fn format_offered_row(row: &OfferedRow) -> (String, String, String, String, String, String, Color, Vec<String>, Vec<(String, String, String)>) {
+fn format_offered_row(row: &OfferedRow) -> FormattedRow {
     // Format Offered column using type-safe OfferedCell
     let offered_cell = OfferedCell::from_offered_row(row);
     let offered_str = offered_cell.format();
@@ -448,7 +460,17 @@ fn format_offered_row(row: &OfferedRow) -> (String, String, String, String, Stri
         ));
     }
 
-    (offered_str, spec_str, resolved_str, dependent_str, result_str, time_str, color, error_details, multi_version_rows)
+    FormattedRow {
+        offered: offered_str,
+        spec: spec_str,
+        resolved: resolved_str,
+        dependent: dependent_str,
+        result: result_str,
+        time: time_str,
+        color,
+        error_details,
+        multi_version_rows,
+    }
 }
 
 //
@@ -559,76 +581,6 @@ pub fn summarize_offered_rows(rows: &[OfferedRow]) -> TestSummary {
     }
 }
 
-/// Summarize TestResults into counts
-pub fn summarize_results(results: &[crate::TestResult]) -> TestSummary {
-    let mut passed = 0;
-    let mut regressed = 0;
-    let mut broken = 0;
-
-    for result in results {
-        match &result.data {
-            crate::TestResultData::Skipped(_) => {
-                // Skip counting skipped tests
-            }
-            crate::TestResultData::Error(_) => {
-                broken += 1;
-            }
-            crate::TestResultData::MultiVersion(ref outcomes) => {
-                // Baseline is the first outcome
-                let baseline = outcomes.first();
-
-                let mut has_regressed = false;
-                let mut has_broken = false;
-
-                for (idx, outcome) in outcomes.iter().enumerate() {
-                    if idx == 0 {
-                        // Baseline - if it fails, mark as broken
-                        if !outcome.result.is_success() {
-                            has_broken = true;
-                        }
-                    } else {
-                        // Offered version - classify based on baseline
-                        if !outcome.result.is_success() {
-                            if let Some(base) = baseline {
-                                if base.result.is_success() {
-                                    has_regressed = true;
-                                } else {
-                                    has_broken = true;
-                                }
-                            } else {
-                                has_broken = true;
-                            }
-                        } else {
-                            // Offered version passed
-                            if let Some(base) = baseline {
-                                if base.result.is_success() {
-                                    // Don't count yet - only count if ALL offered versions pass
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Count based on worst outcome
-                if has_regressed {
-                    regressed += 1;
-                } else if has_broken {
-                    broken += 1;
-                } else {
-                    passed += 1;
-                }
-            }
-        }
-    }
-
-    TestSummary {
-        passed,
-        regressed,
-        broken,
-        total: passed + regressed + broken,
-    }
-}
-
 /// Format summary statistics as a string
 pub fn format_summary(summary: &TestSummary) -> String {
     let mut output = String::new();
@@ -673,7 +625,7 @@ pub fn generate_html_report(rows: &[OfferedRow], crate_name: &str, display_versi
     writeln!(file, "</tr></thead><tbody>")?;
 
     for row in rows {
-        let (offered, spec, resolved, dependent, result, time, _, _, _) = format_offered_row(row);
+        let formatted = format_offered_row(row);
         let class = if row.offered.is_some() {
             let overall_passed = row.test.commands.iter().all(|cmd| cmd.result.passed);
             match (row.baseline_passed, overall_passed) {
@@ -686,8 +638,8 @@ pub fn generate_html_report(rows: &[OfferedRow], crate_name: &str, display_versi
         };
 
         writeln!(file, "<tr class='{}'><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{} {}</td></tr>",
-                 class, sanitize(&offered), sanitize(&spec), sanitize(&resolved),
-                 sanitize(&dependent), sanitize(&result), sanitize(&time))?;
+                 class, sanitize(&formatted.offered), sanitize(&formatted.spec), sanitize(&formatted.resolved),
+                 sanitize(&formatted.dependent), sanitize(&formatted.result), sanitize(&formatted.time))?;
     }
 
     writeln!(file, "</tbody></table>")?;
@@ -712,9 +664,9 @@ pub fn generate_markdown_report(rows: &[OfferedRow], crate_name: &str, display_v
     writeln!(file, "|---------|------|----------|-----------|--------|")?;
 
     for row in rows {
-        let (offered, spec, resolved, dependent, result, time, _, _, _) = format_offered_row(row);
+        let formatted = format_offered_row(row);
         writeln!(file, "| {} | {} | {} | {} | {} {} |",
-                 offered, spec, resolved, dependent, result, time)?;
+                 formatted.offered, formatted.spec, formatted.resolved, formatted.dependent, formatted.result, formatted.time)?;
     }
 
     let summary = summarize_offered_rows(rows);
@@ -800,24 +752,24 @@ pub fn export_markdown_table_report(rows: &[OfferedRow], output_path: &PathBuf, 
 
 /// Format an OfferedRow as a string (similar to print_offered_row but returns String)
 fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String {
-    let (offered_str, spec_str, resolved_str, dependent_str, result_str, time_str, _color, error_details, multi_version_rows) = format_offered_row(row);
+    let formatted = format_offered_row(row);
     let w = &*WIDTHS;
 
     let mut output = String::new();
 
     // Main row
-    let offered_display = truncate_with_padding(&offered_str, w.offered - 2);
-    let spec_display = truncate_with_padding(&spec_str, w.spec - 2);
-    let resolved_display = truncate_with_padding(&resolved_str, w.resolved - 2);
-    let dependent_display = truncate_with_padding(&dependent_str, w.dependent - 2);
-    let result_display = format!("{:>12} {:>5}", result_str, time_str);
+    let offered_display = truncate_with_padding(&formatted.offered, w.offered - 2);
+    let spec_display = truncate_with_padding(&formatted.spec, w.spec - 2);
+    let resolved_display = truncate_with_padding(&formatted.resolved, w.resolved - 2);
+    let dependent_display = truncate_with_padding(&formatted.dependent, w.dependent - 2);
+    let result_display = format!("{:>12} {:>5}", formatted.result, formatted.time);
     let result_display = truncate_with_padding(&result_display, w.result - 2);
 
     output.push_str(&format!("│ {} │ {} │ {} │ {} │ {} │\n",
         offered_display, spec_display, resolved_display, dependent_display, result_display));
 
     // Error details (if any)
-    if !error_details.is_empty() {
+    if !formatted.error_details.is_empty() {
         let error_text_width = w.total - 1 - w.offered - 1 - 1 - 1 - 1;
         let corner1_width = w.spec;
         let corner2_width = w.dependent;
@@ -828,7 +780,7 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
             w_offered = w.offered, corner1 = corner1_width,
             padding = padding_width, corner2 = corner2_width, w_result = w.result));
 
-        for error_line in &error_details {
+        for error_line in &formatted.error_details {
             let truncated = truncate_with_padding(error_line, error_text_width);
             output.push_str(&format!("│{:w_offered$}│ {} │\n", "", truncated, w_offered = w.offered));
         }
@@ -842,8 +794,8 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
     }
 
     // Multi-version rows (if any)
-    if !multi_version_rows.is_empty() {
-        for (_i, (spec, resolved, dependent)) in multi_version_rows.iter().enumerate() {
+    if !formatted.multi_version_rows.is_empty() {
+        for (_i, (spec, resolved, dependent)) in formatted.multi_version_rows.iter().enumerate() {
             let spec_display = format!("├─ {}", spec);
             let spec_display = truncate_with_padding(&spec_display, w.spec - 2);
             let resolved_display = format!("├─ {}", resolved);

@@ -4,11 +4,37 @@
 /// without requiring network access to crates.io
 
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 
 // Helper to get the test fixtures directory
 fn fixtures_dir() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     Path::new(manifest_dir).join("test-crates/integration-fixtures")
+}
+
+// Helper to run cargo commands in a directory
+fn run_cargo(args: &[&str], cwd: &Path) -> Output {
+    Command::new("cargo")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run cargo {}: {}", args.join(" "), e))
+}
+
+// Helper to assert cargo command succeeded
+fn assert_cargo_success(output: &Output, context: &str) {
+    assert!(output.status.success(),
+            "{} failed with status: {:?}\nstderr: {}",
+            context,
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr));
+}
+
+// Helper to assert cargo command failed
+fn assert_cargo_failure(output: &Output, context: &str) {
+    assert!(!output.status.success(),
+            "{} should have failed but succeeded",
+            context);
 }
 
 // Note: These tests will be implemented once we expose the compile module's
@@ -31,129 +57,55 @@ fn test_fixtures_exist() {
 
 #[test]
 fn test_base_crate_v1_compiles() {
-    use std::process::Command;
-
     let base_v1 = fixtures_dir().join("base-crate-v1");
-
-    let output = Command::new("cargo")
-        .arg("check")
-        .current_dir(&base_v1)
-        .output()
-        .expect("Failed to run cargo check");
-
-    assert!(output.status.success(),
-            "base-crate-v1 should compile successfully");
+    let output = run_cargo(&["check"], &base_v1);
+    assert_cargo_success(&output, "base-crate-v1 check");
 }
 
 #[test]
 fn test_base_crate_v2_compiles() {
-    use std::process::Command;
-
     let base_v2 = fixtures_dir().join("base-crate-v2");
-
-    let output = Command::new("cargo")
-        .arg("check")
-        .current_dir(&base_v2)
-        .output()
-        .expect("Failed to run cargo check");
-
-    assert!(output.status.success(),
-            "base-crate-v2 should compile successfully");
+    let output = run_cargo(&["check"], &base_v2);
+    assert_cargo_success(&output, "base-crate-v2 check");
 }
 
 #[test]
 fn test_dependent_passing_with_v1() {
-    use std::process::Command;
-
     let dependent = fixtures_dir().join("dependent-passing");
-
-    // Should compile with v1 (default dependency)
-    let output = Command::new("cargo")
-        .arg("check")
-        .current_dir(&dependent)
-        .output()
-        .expect("Failed to run cargo check");
-
-    assert!(output.status.success(),
-            "dependent-passing should compile with base-crate-v1");
+    let output = run_cargo(&["check"], &dependent);
+    assert_cargo_success(&output, "dependent-passing check with v1");
 }
 
 #[test]
 fn test_dependent_passing_tests_with_v1() {
-    use std::process::Command;
-
     let dependent = fixtures_dir().join("dependent-passing");
-
-    // Tests should pass with v1
-    let output = Command::new("cargo")
-        .arg("test")
-        .current_dir(&dependent)
-        .output()
-        .expect("Failed to run cargo test");
-
-    assert!(output.status.success(),
-            "dependent-passing tests should pass with base-crate-v1");
+    let output = run_cargo(&["test"], &dependent);
+    assert_cargo_success(&output, "dependent-passing tests with v1");
 }
 
 #[test]
 fn test_dependent_regressed_with_v1() {
-    use std::process::Command;
-
     let dependent = fixtures_dir().join("dependent-regressed");
-
-    // Should compile with v1
-    let output = Command::new("cargo")
-        .arg("check")
-        .current_dir(&dependent)
-        .output()
-        .expect("Failed to run cargo check");
-
-    assert!(output.status.success(),
-            "dependent-regressed should compile with base-crate-v1");
+    let output = run_cargo(&["check"], &dependent);
+    assert_cargo_success(&output, "dependent-regressed check with v1");
 }
 
 #[test]
 fn test_dependent_broken_fails() {
-    use std::process::Command;
-
     let dependent = fixtures_dir().join("dependent-broken");
-
-    // Should fail to compile (has type error)
-    let output = Command::new("cargo")
-        .arg("check")
-        .current_dir(&dependent)
-        .output()
-        .expect("Failed to run cargo check");
-
-    assert!(!output.status.success(),
-            "dependent-broken should fail to compile");
+    let output = run_cargo(&["check"], &dependent);
+    assert_cargo_failure(&output, "dependent-broken check");
 }
 
 #[test]
 fn test_dependent_test_failing_with_v1() {
-    use std::process::Command;
-
     let dependent = fixtures_dir().join("dependent-test-failing");
 
-    // Check should pass with v1
-    let output = Command::new("cargo")
-        .arg("check")
-        .current_dir(&dependent)
-        .output()
-        .expect("Failed to run cargo check");
+    let check_output = run_cargo(&["check"], &dependent);
+    assert_cargo_success(&check_output, "dependent-test-failing check with v1");
 
-    assert!(output.status.success(),
-            "dependent-test-failing should check successfully with base-crate-v1");
-
-    // Tests should pass with v1
-    let output = Command::new("cargo")
-        .arg("test")
-        .current_dir(&dependent)
-        .output()
-        .expect("Failed to run cargo test");
-
-    assert!(output.status.success(),
-            "dependent-test-failing tests should pass with base-crate-v1");
+    let test_output = run_cargo(&["test"], &dependent);
+    assert_cargo_success(&test_output, "dependent-test-failing tests with v1");
 }
 
 // TODO: Add tests that use cargo's path override to test with base-crate-v2
@@ -260,19 +212,9 @@ fn test_staging_directory_caching_check() {
 
 #[test]
 fn test_cargo_metadata_works_on_fixture() {
-    use std::process::Command;
-
-    let fixtures = fixtures_dir();
-    let dependent = fixtures.join("dependent-passing");
-
-    // Verify cargo metadata works on one of our fixtures
-    let output = Command::new("cargo")
-        .args(&["metadata", "--format-version=1", "--no-deps"])
-        .current_dir(&dependent)
-        .output()
-        .expect("Failed to run cargo metadata");
-
-    assert!(output.status.success(), "cargo metadata should succeed");
+    let dependent = fixtures_dir().join("dependent-passing");
+    let output = run_cargo(&["metadata", "--format-version=1", "--no-deps"], &dependent);
+    assert_cargo_success(&output, "cargo metadata");
 
     // Parse JSON to verify structure
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -286,18 +228,9 @@ fn test_cargo_metadata_works_on_fixture() {
 
 #[test]
 fn test_cargo_metadata_shows_base_crate_dependency() {
-    use std::process::Command;
-
-    let fixtures = fixtures_dir();
-    let dependent = fixtures.join("dependent-passing");
-
-    let output = Command::new("cargo")
-        .args(&["metadata", "--format-version=1", "--no-deps"])
-        .current_dir(&dependent)
-        .output()
-        .expect("Failed to run cargo metadata");
-
-    assert!(output.status.success());
+    let dependent = fixtures_dir().join("dependent-passing");
+    let output = run_cargo(&["metadata", "--format-version=1", "--no-deps"], &dependent);
+    assert_cargo_success(&output, "cargo metadata");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let metadata: serde_json::Value = serde_json::from_str(&stdout).unwrap();

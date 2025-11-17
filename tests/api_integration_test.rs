@@ -2,17 +2,20 @@
 // These tests hit the real crates.io API using the 'rgb' crate
 
 use std::time::Duration;
+use crates_io_api::SyncClient;
+
+/// Helper to create a test API client with proper rate limiting
+fn test_client() -> SyncClient {
+    SyncClient::new(
+        "cargo-copter-test/0.1.1 (test suite)",
+        Duration::from_millis(1000)
+    ).expect("Failed to create API client")
+}
 
 /// Test that we can fetch reverse dependencies for rgb
 #[test]
 fn test_rgb_reverse_dependencies_with_limit() {
-    use crates_io_api::SyncClient;
-
-    // Create API client with proper User-Agent and rate limiting
-    let client = SyncClient::new(
-        "cargo-copter-test/0.1.1 (test suite)",
-        Duration::from_millis(1000)
-    ).expect("Failed to create API client");
+    let client = test_client();
 
     // Fetch reverse dependencies for rgb
     let deps = client.crate_reverse_dependencies("rgb")
@@ -29,12 +32,7 @@ fn test_rgb_reverse_dependencies_with_limit() {
 /// Test API response structure
 #[test]
 fn test_rgb_pagination() {
-    use crates_io_api::SyncClient;
-
-    let client = SyncClient::new(
-        "cargo-copter-test/0.1.1 (test suite)",
-        Duration::from_millis(1000)
-    ).expect("Failed to create API client");
+    let client = test_client();
 
     // Fetch reverse dependencies (API returns all results)
     let page1 = client.crate_reverse_dependencies("rgb")
@@ -52,12 +50,7 @@ fn test_rgb_pagination() {
 /// Test that we can find known dependents of rgb
 #[test]
 fn test_rgb_contains_known_dependents() {
-    use crates_io_api::SyncClient;
-
-    let client = SyncClient::new(
-        "cargo-copter-test/0.1.1 (test suite)",
-        Duration::from_millis(1000)
-    ).expect("Failed to create API client");
+    let client = test_client();
 
     // Fetch reverse deps
     let mut all_deps = Vec::new();
@@ -81,12 +74,7 @@ fn test_rgb_contains_known_dependents() {
 /// Test version resolution for rgb
 #[test]
 fn test_rgb_version_resolution() {
-    use crates_io_api::SyncClient;
-
-    let client = SyncClient::new(
-        "cargo-copter-test/0.1.1 (test suite)",
-        Duration::from_millis(1000)
-    ).expect("Failed to create API client");
+    let client = test_client();
 
     // Fetch rgb crate metadata
     let rgb_crate = client.get_crate("rgb")
@@ -108,12 +96,7 @@ fn test_rgb_version_resolution() {
 /// Test that total count is reported correctly
 #[test]
 fn test_limit_parameter_enforced() {
-    use crates_io_api::SyncClient;
-
-    let client = SyncClient::new(
-        "cargo-copter-test/0.1.1 (test suite)",
-        Duration::from_millis(1000)
-    ).expect("Failed to create API client");
+    let client = test_client();
 
     // Fetch reverse dependencies
     let deps = client.crate_reverse_dependencies("rgb")
@@ -134,12 +117,7 @@ fn test_limit_parameter_enforced() {
 /// Smoke test to verify API endpoint structure hasn't changed
 #[test]
 fn test_api_endpoint_structure() {
-    use crates_io_api::SyncClient;
-
-    let client = SyncClient::new(
-        "cargo-copter-test/0.1.1 (test suite)",
-        Duration::from_millis(1000)
-    ).expect("Failed to create API client");
+    let client = test_client();
 
     // Test that basic API calls work
     let deps = client.crate_reverse_dependencies("rgb")

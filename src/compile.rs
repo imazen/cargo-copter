@@ -5,7 +5,6 @@ use std::process::Command;
 use std::env;
 use std::time::{Duration, Instant};
 use std::sync::Mutex;
-// TempDir not needed since we use persistent staging directories
 use log::debug;
 use crate::error_extract::{Diagnostic, parse_cargo_json};
 use fs2::FileExt;
@@ -85,14 +84,25 @@ pub fn log_failure(
 
 /// Restore Cargo.toml from the original backup before testing
 /// This prevents contamination between test runs in the cached staging directory
+///
+/// CRITICAL: This is idempotent and Ctrl+C safe. If a backup exists from a previous
+/// (possibly interrupted) run, we restore from it rather than overwriting it.
 pub fn restore_cargo_toml(staging_path: &Path) -> Result<(), String> {
     let cargo_toml = staging_path.join("Cargo.toml");
     let original = staging_path.join("Cargo.toml.original.txt");
 
-    if original.exists() {
+    // CRITICAL: Never overwrite existing .original - it might be from an interrupted run
+    if !original.exists() {
+        if cargo_toml.exists() {
+            fs::copy(&cargo_toml, &original)
+                .map_err(|e| format!("Failed to save original Cargo.toml: {}", e))?;
+            debug!("Saved original Cargo.toml to {:?}", original);
+        }
+    } else {
+        // Restore from existing original (might be from interrupted run)
         fs::copy(&original, &cargo_toml)
             .map_err(|e| format!("Failed to restore Cargo.toml from original: {}", e))?;
-        debug!("Restored Cargo.toml from original backup in {:?}", staging_path);
+        debug!("Restored Cargo.toml from existing original backup in {:?}", staging_path);
     }
     Ok(())
 }
@@ -249,70 +259,24 @@ fn verify_dependency_version(
     None
 }
 
-/// Add [patch.crates-io] section to Cargo.toml to override a dependency
-/// This respects semver requirements - if the version doesn't match, cargo will fail
-fn add_cargo_patch(
-    crate_path: &Path,
-    dep_name: &str,
-    override_path: &Path,
-) -> Result<(), String> {
-    use std::io::{Read, Write};
-
-    // Convert to absolute path
-    let override_path = if override_path.is_absolute() {
-        override_path.to_path_buf()
-    } else {
-        env::current_dir()
-            .map_err(|e| format!("Failed to get current dir: {}", e))?
-            .join(override_path)
-    };
-
-    let cargo_toml_path = crate_path.join("Cargo.toml");
-    let mut content = String::new();
-
-    // Read original Cargo.toml
-    let mut file = fs::File::open(&cargo_toml_path)
-        .map_err(|e| format!("Failed to open Cargo.toml: {}", e))?;
-    file.read_to_string(&mut content)
-        .map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
-    drop(file);
-
-    // Parse as TOML
-    let mut doc: toml_edit::DocumentMut = content.parse()
-        .map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
-
-    // Add or update [patch.crates-io] section
-    let patch_section = doc.entry("patch").or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-    let patch_table = patch_section.as_table_mut()
-        .ok_or_else(|| "patch is not a table".to_string())?;
-
-    let crates_io_section = patch_table.entry("crates-io").or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-    let crates_io_table = crates_io_section.as_table_mut()
-        .ok_or_else(|| "patch.crates-io is not a table".to_string())?;
-
-    // Add the patch entry for our dependency
-    let mut patch_entry = toml_edit::InlineTable::new();
-    patch_entry.insert("path", override_path.display().to_string().into());
-    crates_io_table.insert(dep_name, toml_edit::Item::Value(toml_edit::Value::InlineTable(patch_entry)));
-
-    debug!("Adding [patch.crates-io] for {} -> {:?}", dep_name, override_path);
-
-    // Write back
-    let mut file = fs::File::create(&cargo_toml_path)
-        .map_err(|e| format!("Failed to create Cargo.toml: {}", e))?;
-    file.write_all(doc.to_string().as_bytes())
-        .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
-
-    debug!("Added patch to Cargo.toml: {} -> {}", dep_name, override_path.display());
-    Ok(())
+/// How to apply a dependency override
+#[derive(Debug, Clone, Copy)]
+enum DependencyOverrideMode {
+    /// Use [patch.crates-io] - respects semver requirements
+    Patch,
+    /// Replace dependency spec directly - bypasses semver requirements
+    Force,
 }
 
-/// Force-modify dependency specification to use exact path, bypassing semver
-/// This is used when --force-versions is specified
-fn force_dependency_spec(
+/// Apply a dependency override to Cargo.toml
+///
+/// - Patch mode: Adds [patch.crates-io] section (semver-compatible)
+/// - Force mode: Replaces dependency spec directly (bypasses semver)
+fn apply_dependency_override(
     crate_path: &Path,
     dep_name: &str,
     override_path: &Path,
+    mode: DependencyOverrideMode,
 ) -> Result<(), String> {
     use std::io::{Read, Write};
 
@@ -339,41 +303,64 @@ fn force_dependency_spec(
     let mut doc: toml_edit::DocumentMut = content.parse()
         .map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
 
-    // Update dependency in all sections (force mode - replaces the spec entirely)
-    let sections = vec!["dependencies", "dev-dependencies", "build-dependencies"];
+    match mode {
+        DependencyOverrideMode::Patch => {
+            // Add or update [patch.crates-io] section
+            let patch_section = doc.entry("patch").or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+            let patch_table = patch_section.as_table_mut()
+                .ok_or_else(|| "patch is not a table".to_string())?;
 
-    for section in sections {
-        if let Some(deps) = doc.get_mut(section).and_then(|s| s.as_table_mut()) {
-            if let Some(dep) = deps.get_mut(dep_name) {
-                debug!("Force-replacing {} in [{}] with path {:?}", dep_name, section, override_path);
+            let crates_io_section = patch_table.entry("crates-io").or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+            let crates_io_table = crates_io_section.as_table_mut()
+                .ok_or_else(|| "patch.crates-io is not a table".to_string())?;
 
-                // Preserve existing fields (optional, default-features, features, etc.)
-                let mut new_dep = toml_edit::InlineTable::new();
-                new_dep.insert("path", override_path.display().to_string().into());
+            // Add the patch entry for our dependency
+            let mut patch_entry = toml_edit::InlineTable::new();
+            patch_entry.insert("path", override_path.display().to_string().into());
+            crates_io_table.insert(dep_name, toml_edit::Item::Value(toml_edit::Value::InlineTable(patch_entry)));
 
-                // Copy fields from original dependency if it's a table
-                if let Some(old_table) = dep.as_inline_table() {
-                    // Preserve important fields
-                    for key in ["optional", "default-features", "features", "package"] {
-                        if let Some(value) = old_table.get(key) {
-                            new_dep.insert(key, value.clone());
-                            debug!("Preserving field '{}' = {:?}", key, value);
-                        }
-                    }
-                } else if let Some(old_table) = dep.as_table_like() {
-                    // Handle table-like dependencies
-                    for key in ["optional", "default-features", "features", "package"] {
-                        if let Some(value) = old_table.get(key) {
-                            if let Some(v) = value.as_value() {
-                                new_dep.insert(key, v.clone());
-                                debug!("Preserving field '{}' = {:?}", key, v);
+            debug!("Adding [patch.crates-io] for {} -> {:?}", dep_name, override_path);
+        }
+        DependencyOverrideMode::Force => {
+            // Update dependency in all sections (force mode - replaces the spec entirely)
+            let sections = vec!["dependencies", "dev-dependencies", "build-dependencies"];
+
+            for section in sections {
+                if let Some(deps) = doc.get_mut(section).and_then(|s| s.as_table_mut()) {
+                    if let Some(dep) = deps.get_mut(dep_name) {
+                        debug!("Force-replacing {} in [{}] with path {:?}", dep_name, section, override_path);
+
+                        // Preserve existing fields (optional, default-features, features, etc.)
+                        let mut new_dep = toml_edit::InlineTable::new();
+                        new_dep.insert("path", override_path.display().to_string().into());
+
+                        // Copy fields from original dependency if it's a table
+                        if let Some(old_table) = dep.as_inline_table() {
+                            // Preserve important fields
+                            for key in ["optional", "default-features", "features", "package"] {
+                                if let Some(value) = old_table.get(key) {
+                                    new_dep.insert(key, value.clone());
+                                    debug!("Preserving field '{}' = {:?}", key, value);
+                                }
+                            }
+                        } else if let Some(old_table) = dep.as_table_like() {
+                            // Handle table-like dependencies
+                            for key in ["optional", "default-features", "features", "package"] {
+                                if let Some(value) = old_table.get(key) {
+                                    if let Some(v) = value.as_value() {
+                                        new_dep.insert(key, v.clone());
+                                        debug!("Preserving field '{}' = {:?}", key, v);
+                                    }
+                                }
                             }
                         }
+
+                        *dep = toml_edit::Item::Value(toml_edit::Value::InlineTable(new_dep));
                     }
                 }
-
-                *dep = toml_edit::Item::Value(toml_edit::Value::InlineTable(new_dep));
             }
+
+            debug!("Force-replaced {} dependency spec with path: {}", dep_name, override_path.display());
         }
     }
 
@@ -383,7 +370,6 @@ fn force_dependency_spec(
     file.write_all(doc.to_string().as_bytes())
         .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
 
-    debug!("Force-replaced {} dependency spec with path: {}", dep_name, override_path.display());
     Ok(())
 }
 
@@ -651,22 +637,24 @@ pub fn run_three_step_ict(
     }
 
     // Setup: Choose patching strategy based on mode
-    let (backup_path, override_path_buf) = if let Some(override_path) = override_path {
+    // For FORCE mode: We'll modify Cargo.toml and rely on restore_cargo_toml for safety
+    // For PATCH mode: We use --config flag (no file modifications needed)
+    let override_path_buf = if let Some(override_path) = override_path {
         if force_versions {
             // FORCE MODE: Must modify Cargo.toml to bypass semver
-            // Backup Cargo.toml before modification
-            let cargo_toml = crate_path.join("Cargo.toml");
-            let backup = crate_path.join(".Cargo.toml.backup");
-            fs::copy(&cargo_toml, &backup)
-                .map_err(|e| format!("Failed to backup Cargo.toml: {}", e))?;
+            // No backup needed - restore_cargo_toml already has .original saved
 
             // Replace dependency spec directly (bypasses semver)
-            force_dependency_spec(crate_path, base_crate_name, override_path)?;
+            apply_dependency_override(
+                crate_path,
+                base_crate_name,
+                override_path,
+                DependencyOverrideMode::Force,
+            )?;
 
-            (Some(backup), None) // Don't use --config when we modified Cargo.toml
+            None // Don't use --config when we modified Cargo.toml
         } else {
             // PATCH MODE: Use --config flag (clean, no file modifications)
-            // Build override_spec for --config flag
             let abs_path = if override_path.is_absolute() {
                 override_path.to_path_buf()
             } else {
@@ -676,13 +664,13 @@ pub fn run_three_step_ict(
             };
 
             debug!("Using --config for patch mode with override_path={:?}, abs_path={:?}", override_path, abs_path);
-            (None, Some(abs_path)) // Use --config, no backup needed
+            Some(abs_path) // Use --config, no file modifications
         }
     } else {
-        (None, None) // No override (baseline test)
+        None // No override (baseline test)
     };
 
-    // Build override_spec for compile_crate calls
+    // Build override_spec for compile_crate calls (only used in patch mode)
     let override_spec = override_path_buf.as_ref().map(|path| (base_crate_name, path.as_path()));
 
     // Step 1: Fetch (always runs)
@@ -790,13 +778,10 @@ pub fn run_three_step_ict(
         }
     }
 
-    // Cleanup: Restore Cargo.toml from backup if we modified it
-    if let Some(backup) = backup_path {
-        let cargo_toml = crate_path.join("Cargo.toml");
-        fs::copy(&backup, &cargo_toml).ok(); // Ignore errors
-        fs::remove_file(&backup).ok(); // Clean up backup
-        debug!("Restored Cargo.toml from backup");
-    }
+    // Cleanup: Always restore Cargo.toml to original state
+    // This handles both FORCE mode (where we modified it) and ensures clean state
+    restore_cargo_toml(crate_path).ok(); // Ignore errors on cleanup
+    debug!("Restored Cargo.toml to original state");
 
     Ok(ThreeStepResult {
         fetch,
@@ -847,110 +832,5 @@ mod tests {
             diagnostics: Vec::new(),
         };
         assert!(!result.failed());
-    }
-
-    // TODO: Update tests for ThreeStepResult instead of FourStepResult
-    #[test]
-    #[ignore]
-    fn test_four_step_result_is_broken() {
-        /*
-        let broken = FourStepResult {
-            baseline_check: CompileResult {
-                step: CompileStep::Check,
-                success: false,
-                stdout: String::new(),
-                stderr: String::new(),
-                duration: Duration::from_secs(1),
-                diagnostics: Vec::new(),
-            },
-            baseline_test: None,
-            override_check: None,
-            override_test: None,
-        };
-        assert!(broken.is_broken());
-        assert!(!broken.is_passed());
-        assert!(!broken.is_regressed());
-        */
-    }
-
-    #[test]
-    #[ignore]
-    fn test_four_step_result_is_passed() {
-        /*
-        let passed = FourStepResult {
-            baseline_check: CompileResult {
-                step: CompileStep::Check,
-                success: true,
-                stdout: String::new(),
-                stderr: String::new(),
-                duration: Duration::from_secs(1),
-                diagnostics: Vec::new(),
-            },
-            baseline_test: Some(CompileResult {
-                step: CompileStep::Test,
-                success: true,
-                stdout: String::new(),
-                stderr: String::new(),
-                duration: Duration::from_secs(2),
-                diagnostics: Vec::new(),
-            }),
-            override_check: Some(CompileResult {
-                step: CompileStep::Check,
-                success: true,
-                stdout: String::new(),
-                stderr: String::new(),
-                duration: Duration::from_secs(1),
-                diagnostics: Vec::new(),
-            }),
-            override_test: Some(CompileResult {
-                step: CompileStep::Test,
-                success: true,
-                stdout: String::new(),
-                stderr: String::new(),
-                duration: Duration::from_secs(2),
-                diagnostics: Vec::new(),
-            }),
-        };
-        assert!(!passed.is_broken());
-        assert!(passed.is_passed());
-        assert!(!passed.is_regressed());
-        */
-    }
-
-    #[test]
-    #[ignore]
-    fn test_four_step_result_is_regressed() {
-        /*
-        let regressed = FourStepResult {
-            baseline_check: CompileResult {
-                step: CompileStep::Check,
-                success: true,
-                stdout: String::new(),
-                stderr: String::new(),
-                duration: Duration::from_secs(1),
-                diagnostics: Vec::new(),
-            },
-            baseline_test: Some(CompileResult {
-                step: CompileStep::Test,
-                success: true,
-                stdout: String::new(),
-                stderr: String::new(),
-                duration: Duration::from_secs(2),
-                diagnostics: Vec::new(),
-            }),
-            override_check: Some(CompileResult {
-                step: CompileStep::Check,
-                success: false, // Failed!
-                stdout: String::new(),
-                stderr: String::new(),
-                duration: Duration::from_secs(1),
-                diagnostics: Vec::new(),
-            }),
-            override_test: None,
-        };
-        assert!(!regressed.is_broken());
-        assert!(!regressed.is_passed());
-        assert!(regressed.is_regressed());
-        */
     }
 }
