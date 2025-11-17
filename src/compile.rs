@@ -80,30 +80,6 @@ pub fn log_failure_with_diagnostics(
         }
     };
 
-    // Determine if this is a build/check failure (not a test failure)
-    let is_build_failure = command.contains("cargo fetch") || command.contains("cargo check");
-
-    // Open file with append mode
-    let file = match OpenOptions::new().create(true).append(true).open(&log_path) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("Failed to open failure log: {}", e);
-            return;
-        }
-    };
-
-    // Lock the file for exclusive write access
-    if let Err(e) = file.lock_exclusive() {
-        eprintln!("Failed to lock failure log: {}", e);
-        return;
-    }
-
-    // Write failure details
-    let mut writer = BufWriter::new(&file);
-    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-
-    let exit_str = exit_code.map(|c| c.to_string()).unwrap_or_else(|| "N/A".to_string());
-
     // Generate error signature for deduplication
     let current_signature = if !diagnostics.is_empty() {
         let error_text = diagnostics.iter().map(|d| d.rendered.as_str()).collect::<Vec<_>>().join("\n");
@@ -120,56 +96,28 @@ pub fn log_failure_with_diagnostics(
         duplicate
     };
 
-    let _ = writeln!(writer, "\n{}", "=".repeat(100));
-    let _ = writeln!(
-        writer,
-        "[{}] FAILURE: {} {} testing {} {}",
-        timestamp, dependent, dependent_version, base_crate, test_label
+    // Write to main debug log
+    write_failure_to_log(
+        &log_path,
+        "FAILURE",
+        dependent,
+        dependent_version,
+        base_crate,
+        test_label,
+        command,
+        exit_code,
+        stderr,
+        diagnostics,
+        is_duplicate,
     );
-    let _ = writeln!(writer, "{}", "=".repeat(100));
-    let _ = writeln!(writer, "Command: {}", command);
-    let _ = writeln!(writer, "Exit code: {}", exit_str);
 
-    if is_duplicate {
-        let _ = writeln!(writer, "\n--- SAME FAILURE AS PREVIOUS ---");
-    } else if !diagnostics.is_empty() {
-        let _ = writeln!(writer, "\n--- ERRORS ---");
-        for (idx, diag) in diagnostics.iter().enumerate() {
-            let level_str = match diag.level {
-                crate::error_extract::DiagnosticLevel::Error => "error",
-                crate::error_extract::DiagnosticLevel::Warning => "warning",
-                crate::error_extract::DiagnosticLevel::Help => "help",
-                crate::error_extract::DiagnosticLevel::Note => "note",
-                crate::error_extract::DiagnosticLevel::Other(ref s) => s.as_str(),
-            };
-            let _ = writeln!(writer, "\n{}. [{}] {}", idx + 1, level_str, diag.message);
-
-            // Show the rendered error which includes code snippets and spans
-            if !diag.rendered.is_empty() {
-                let _ = writeln!(writer, "{}", diag.rendered);
-            }
-        }
-    } else {
-        // No diagnostics available - fall back to raw output
-        let _ = writeln!(writer, "\n--- STDERR (no structured errors) ---");
-        // Filter out JSON lines to make it more readable
-        for line in stderr.lines() {
-            // Skip lines that look like cargo JSON output
-            if !line.trim_start().starts_with('{') {
-                let _ = writeln!(writer, "{}", line);
-            }
-        }
-    }
-
-    let _ = writeln!(writer, "\n{}", "=".repeat(100));
-
-    let _ = writer.flush();
-
-    // If this is a build failure, also write to build-specific log
+    // If this is a build/check failure, also write to build-specific log
+    let is_build_failure = command.contains("cargo fetch") || command.contains("cargo check");
     if is_build_failure {
         if let Some(build_path) = build_log_path {
             write_failure_to_log(
                 &build_path,
+                "BUILD FAILURE",
                 dependent,
                 dependent_version,
                 base_crate,
@@ -182,13 +130,12 @@ pub fn log_failure_with_diagnostics(
             );
         }
     }
-
-    // Unlock is automatic when file goes out of scope
 }
 
 /// Helper function to write a failure entry to a specific log file
 fn write_failure_to_log(
     log_path: &Path,
+    log_type: &str, // "FAILURE" or "BUILD FAILURE"
     dependent: &str,
     dependent_version: &str,
     base_crate: &str,
@@ -203,14 +150,14 @@ fn write_failure_to_log(
     let file = match OpenOptions::new().create(true).append(true).open(log_path) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("Failed to open build failure log: {}", e);
+            eprintln!("Failed to open {} log: {}", log_type, e);
             return;
         }
     };
 
     // Lock the file for exclusive write access
     if let Err(e) = file.lock_exclusive() {
-        eprintln!("Failed to lock build failure log: {}", e);
+        eprintln!("Failed to lock {} log: {}", log_type, e);
         return;
     }
 
@@ -221,8 +168,8 @@ fn write_failure_to_log(
     let _ = writeln!(writer, "\n{}", "=".repeat(100));
     let _ = writeln!(
         writer,
-        "[{}] BUILD FAILURE: {} {} testing {} {}",
-        timestamp, dependent, dependent_version, base_crate, test_label
+        "[{}] {}: {} {} testing {} {}",
+        timestamp, log_type, dependent, dependent_version, base_crate, test_label
     );
     let _ = writeln!(writer, "{}", "=".repeat(100));
     let _ = writeln!(writer, "Command: {}", command);
@@ -257,6 +204,7 @@ fn write_failure_to_log(
 
     let _ = writeln!(writer, "\n{}", "=".repeat(100));
     let _ = writer.flush();
+    // Unlock is automatic when file goes out of scope
 }
 
 /// Restore Cargo.toml from the original backup before testing
@@ -337,31 +285,7 @@ fn verify_dependency_version(crate_path: &Path, dep_name: &str) -> Option<String
     // Don't use --no-deps because we need to see resolved dependencies
     let output =
         Command::new("cargo").args(&["metadata", "--format-version=1"]).current_dir(crate_path).output().ok()?;
-    // if output.status.success() {
-    //     let stdout = String::from_utf8_lossy(&output.stdout);
-    //     if let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&stdout) {
-    //         // Check resolve.nodes for the dependency
-    //         if let Some(resolve) = metadata.get("resolve") {
-    //             if let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array()) {
-    //                 for node in nodes {
-    //                     if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
-    //                         for dep in deps {
-    //                             if let Some(name) = dep.get("name").and_then(|n| n.as_str()) {
-    //                                 if name == dep_name {
-    //                                     if let Some(pkg) = dep.get("pkg").and_then(|p| p.as_str()) {
-    //                                         // pkg format: "rgb 0.8.52 (path+file://...)" or "rgb 0.8.52 (registry+...)"
-    //                                         let parts: Vec<&str> = pkg.split_whitespace().collect();
-    //                                         if parts.len() >= 2 {
-    //                                             let version = parts[1].to_string();
-    //                                             debug!("Found {} version: {}", dep_name, version);
-    //                                             return Some(version);
-    //                                         }
-    //                                     }
-    //                                 }
-    //                             }
-    //                         }
-    //                     }
-    //                 }
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         debug!("cargo metadata failed: {}", stderr.trim());
