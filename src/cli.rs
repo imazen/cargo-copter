@@ -129,12 +129,6 @@ impl CliArgs {
         Ok(())
     }
 
-    /// Check if we're testing local paths only (no network required)
-    pub fn is_offline_mode(&self) -> bool {
-        self.dependents.is_empty()
-            && self.top_dependents == 0
-            && !self.dependent_paths.is_empty()
-    }
 }
 
 #[cfg(test)]
@@ -212,47 +206,4 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_is_offline_mode() {
-        let args = CliArgs {
-            path: None,
-            crate_name: None,
-            top_dependents: 0,
-            dependents: vec![],
-            dependent_paths: vec![PathBuf::from("/tmp/crate")],
-            test_versions: vec![],
-            force_versions: vec![],
-            jobs: 1,
-            output: PathBuf::from("report.html"),
-            staging_dir: PathBuf::from(".copter/staging"),
-            no_check: false,
-            no_test: false,
-            json: false,
-            clean: false,
-            error_lines: 10,
-        };
-        assert!(args.is_offline_mode());
-    }
-
-    #[test]
-    fn test_not_offline_mode_with_dependents() {
-        let args = CliArgs {
-            path: None,
-            crate_name: None,
-            top_dependents: 0,
-            dependents: vec!["serde".to_string()],
-            dependent_paths: vec![],
-            test_versions: vec![],
-            force_versions: vec![],
-            jobs: 1,
-            output: PathBuf::from("report.html"),
-            staging_dir: PathBuf::from(".copter/staging"),
-            no_check: false,
-            no_test: false,
-            json: false,
-            clean: false,
-            error_lines: 10,
-        };
-        assert!(!args.is_offline_mode());
-    }
 }

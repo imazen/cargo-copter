@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use crate::{OfferedRow, DependencyRef, OfferedVersion, TestExecution, TestCommand, CommandType, CommandResult, CrateFailure, TransitiveTest, VersionSource};
+use crate::{OfferedRow, CommandType, VersionSource};
 use term::color::Color;
 use unicode_width::{UnicodeWidthStr, UnicodeWidthChar};
 use terminal_size::{Width, terminal_size};
@@ -20,7 +20,6 @@ use terminal_size::{Width, terminal_size};
 pub enum StatusIcon {
     Passed,     // ✓
     Failed,     // ✗
-    Skipped,    // ⊘
 }
 
 impl StatusIcon {
@@ -28,7 +27,6 @@ impl StatusIcon {
         match self {
             StatusIcon::Passed => "✓",
             StatusIcon::Failed => "✗",
-            StatusIcon::Skipped => "⊘",
         }
     }
 }
@@ -546,22 +544,6 @@ fn format_offered_row(row: &OfferedRow) -> FormattedRow {
 // Text formatting utilities
 //
 
-/// Truncate string to fit width, adding "..." if truncated
-fn truncate_str(s: &str, max_width: usize) -> String {
-    let char_count = s.chars().count();
-
-    if char_count <= max_width {
-        s.to_string()
-    } else if max_width >= 3 {
-        let truncate_at = max_width - 3;
-        let truncated: String = s.chars().take(truncate_at).collect();
-        format!("{}...", truncated)
-    } else {
-        let truncated: String = s.chars().take(max_width).collect();
-        truncated
-    }
-}
-
 /// Count the display width of a string, accounting for wide Unicode characters
 fn display_width(s: &str) -> usize {
     // Use unicode-width crate for accurate width calculation
@@ -576,7 +558,7 @@ fn truncate_with_padding(s: &str, width: usize) -> String {
         // Truncate
         let mut result = String::new();
         let mut current_width = 0;
-        let mut chars: Vec<char> = s.chars().collect();
+        let chars: Vec<char> = s.chars().collect();
 
         // Reserve space for "..."
         let target_width = if width >= 3 { width - 3 } else { width };
@@ -909,113 +891,8 @@ pub fn print_comparison_table(stats_list: &[ComparisonStats]) {
 }
 
 //
-// HTML and Markdown report generation (simplified)
-//
-
-/// Generate HTML report from OfferedRows
-pub fn generate_html_report(rows: &[OfferedRow], crate_name: &str, display_version: &str, output_path: &PathBuf) -> std::io::Result<()> {
-    let mut file = File::create(output_path)?;
-
-    writeln!(file, "<!DOCTYPE html>")?;
-    writeln!(file, "<html><head><meta charset='UTF-8'>")?;
-    writeln!(file, "<title>Cargo Copter Report - {}</title>", crate_name)?;
-    writeln!(file, "<style>")?;
-    writeln!(file, "body {{ font-family: monospace; margin: 20px; }}")?;
-    writeln!(file, "table {{ border-collapse: collapse; width: 100%; }}")?;
-    writeln!(file, "th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}")?;
-    writeln!(file, ".passed {{ color: green; }}")?;
-    writeln!(file, ".regressed {{ color: red; }}")?;
-    writeln!(file, ".broken {{ color: orange; }}")?;
-    writeln!(file, "</style></head><body>")?;
-    writeln!(file, "<h1>Cargo Copter Report</h1>")?;
-    writeln!(file, "<p>Crate: <strong>{}</strong> ({})</p>", crate_name, display_version)?;
-    writeln!(file, "<table><thead><tr>")?;
-    writeln!(file, "<th>Offered</th><th>Spec</th><th>Resolved</th><th>Dependent</th><th>Result</th>")?;
-    writeln!(file, "</tr></thead><tbody>")?;
-
-    for row in rows {
-        let formatted = format_offered_row(row);
-        let class = if row.offered.is_some() {
-            let overall_passed = row.test.commands.iter().all(|cmd| cmd.result.passed);
-            match (row.baseline_passed, overall_passed) {
-                (Some(true), true) => "passed",
-                (Some(true), false) => "regressed",
-                _ => "broken",
-            }
-        } else {
-            ""
-        };
-
-        writeln!(file, "<tr class='{}'><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{} {}</td></tr>",
-                 class, sanitize(&formatted.offered), sanitize(&formatted.spec), sanitize(&formatted.resolved),
-                 sanitize(&formatted.dependent), sanitize(&formatted.result), sanitize(&formatted.time))?;
-    }
-
-    writeln!(file, "</tbody></table>")?;
-
-    let summary = summarize_offered_rows(rows);
-    writeln!(file, "<h2>Summary</h2>")?;
-    writeln!(file, "<p>Passed: {}, Regressed: {}, Broken: {}</p>",
-             summary.passed, summary.regressed, summary.broken)?;
-
-    writeln!(file, "</body></html>")?;
-    Ok(())
-}
-
-/// Generate Markdown report from OfferedRows
-pub fn generate_markdown_report(rows: &[OfferedRow], crate_name: &str, display_version: &str, output_path: &PathBuf) -> std::io::Result<()> {
-    let mut file = File::create(output_path)?;
-
-    writeln!(file, "# Cargo Copter Report\n")?;
-    writeln!(file, "**Crate**: {} ({})\n", crate_name, display_version)?;
-    writeln!(file, "## Test Results\n")?;
-    writeln!(file, "| Offered | Spec | Resolved | Dependent | Result |")?;
-    writeln!(file, "|---------|------|----------|-----------|--------|")?;
-
-    for row in rows {
-        let formatted = format_offered_row(row);
-        writeln!(file, "| {} | {} | {} | {} | {} {} |",
-                 formatted.offered, formatted.spec, formatted.resolved, formatted.dependent, formatted.result, formatted.time)?;
-    }
-
-    let summary = summarize_offered_rows(rows);
-    writeln!(file, "\n## Summary\n")?;
-    writeln!(file, "- ✓ Passed: {}", summary.passed)?;
-    writeln!(file, "- ✗ Regressed: {}", summary.regressed)?;
-    writeln!(file, "- ⚠ Broken: {}", summary.broken)?;
-    writeln!(file, "- **Total**: {}", summary.total)?;
-
-    Ok(())
-}
-
-/// Sanitize HTML special characters
-fn sanitize(s: &str) -> String {
-    s.chars()
-        .flat_map(|c| match c {
-            '<' => "&lt;".chars().collect(),
-            '>' => "&gt;".chars().collect(),
-            '&' => "&amp;".chars().collect(),
-            _ => vec![c],
-        })
-        .collect()
-}
-
-//
 // Temporary compatibility stubs for old API (TO BE REMOVED)
 //
-
-/// Stub for old API - needs migration to OfferedRow
-pub fn print_immediate_failure(_result: &crate::TestResult) {
-    // TODO: Migrate to OfferedRow-based error printing
-    eprintln!("Warning: print_immediate_failure not yet migrated to OfferedRow");
-}
-
-/// Stub for old API - needs migration to OfferedRow
-pub fn print_console_table_v2(_results: &[crate::TestResult], _crate_name: &str, _display_version: &str) {
-    // TODO: Migrate to OfferedRow streaming
-    println!("Warning: print_console_table_v2 not yet migrated to OfferedRow");
-    println!("Use: print_table_header(), print_offered_row(), print_table_footer()");
-}
 
 /// Generate markdown report with console table in code block
 pub fn export_markdown_table_report(rows: &[OfferedRow], output_path: &PathBuf, crate_name: &str, display_version: &str, total_deps: usize) -> std::io::Result<()> {
@@ -1042,7 +919,7 @@ pub fn export_markdown_table_report(rows: &[OfferedRow], output_path: &PathBuf, 
     write!(file, "{}", format_table_header(crate_name, display_version, total_deps))?;
 
     // Write all rows
-    for (i, row) in rows.iter().enumerate() {
+    for row in rows.iter() {
         // Determine if this is the last row in its group
         // For simplicity, assume each row is its own group (no separators in markdown)
         let is_last_in_group = true;
@@ -1119,17 +996,4 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
     }
 
     output
-}
-
-/// Compatibility wrapper for old API
-pub fn export_markdown_report(_rows: &[crate::TestResult], _output_path: &PathBuf, _crate_name: &str, _display_version: &str) -> std::io::Result<()> {
-    // Deprecated - use export_markdown_table_report with OfferedRows instead
-    Ok(())
-}
-
-/// Compatibility wrapper for old API
-pub fn export_html_report(rows: Vec<crate::TestResult>, output_path: &PathBuf, crate_name: &str, display_version: &str) -> std::io::Result<TestSummary> {
-    // TODO: Convert TestResult to OfferedRow, then call generate_html_report
-    eprintln!("Warning: export_html_report needs TestResult -> OfferedRow conversion");
-    Ok(TestSummary { passed: 0, regressed: 0, broken: 0, total: 0 })
 }

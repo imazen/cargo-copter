@@ -1,4 +1,4 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::{Write, BufWriter};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -262,16 +262,11 @@ fn verify_dependency_version(
 /// How to apply a dependency override
 #[derive(Debug, Clone, Copy)]
 enum DependencyOverrideMode {
-    /// Use [patch.crates-io] - respects semver requirements
-    Patch,
     /// Replace dependency spec directly - bypasses semver requirements
     Force,
 }
 
-/// Apply a dependency override to Cargo.toml
-///
-/// - Patch mode: Adds [patch.crates-io] section (semver-compatible)
-/// - Force mode: Replaces dependency spec directly (bypasses semver)
+/// Apply a dependency override to Cargo.toml - Force mode only
 fn apply_dependency_override(
     crate_path: &Path,
     dep_name: &str,
@@ -304,23 +299,6 @@ fn apply_dependency_override(
         .map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
 
     match mode {
-        DependencyOverrideMode::Patch => {
-            // Add or update [patch.crates-io] section
-            let patch_section = doc.entry("patch").or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-            let patch_table = patch_section.as_table_mut()
-                .ok_or_else(|| "patch is not a table".to_string())?;
-
-            let crates_io_section = patch_table.entry("crates-io").or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-            let crates_io_table = crates_io_section.as_table_mut()
-                .ok_or_else(|| "patch.crates-io is not a table".to_string())?;
-
-            // Add the patch entry for our dependency
-            let mut patch_entry = toml_edit::InlineTable::new();
-            patch_entry.insert("path", override_path.display().to_string().into());
-            crates_io_table.insert(dep_name, toml_edit::Item::Value(toml_edit::Value::InlineTable(patch_entry)));
-
-            debug!("Adding [patch.crates-io] for {} -> {:?}", dep_name, override_path);
-        }
         DependencyOverrideMode::Force => {
             // Update dependency in all sections (force mode - replaces the spec entirely)
             let sections = vec!["dependencies", "dev-dependencies", "build-dependencies"];
@@ -444,44 +422,6 @@ pub fn compile_crate(
     })
 }
 
-/// Emit a .cargo/config file to override a dependency with a local path
-fn emit_cargo_override_path(source_dir: &Path, override_path: &Path) -> Result<(), String> {
-    debug!("overriding cargo path in {:?} with {:?}", source_dir, override_path);
-
-    // Convert to absolute path if needed
-    let override_path = if override_path.is_absolute() {
-        override_path.to_path_buf()
-    } else {
-        env::current_dir()
-            .map_err(|e| format!("Failed to get current dir: {}", e))?
-            .join(override_path)
-    };
-
-    let cargo_dir = source_dir.join(".cargo");
-    fs::create_dir_all(&cargo_dir)
-        .map_err(|e| format!("Failed to create .cargo dir: {}", e))?;
-
-    let config_path = cargo_dir.join("config.toml");
-    let mut file = File::create(&config_path)
-        .map_err(|e| format!("Failed to create config.toml: {}", e))?;
-
-    let config_content = format!(
-        r#"[patch.crates-io]
-# This is a temporary override for cargo-copter testing
-# Any crate at this path will override the published version
-paths = ["{}"]
-"#,
-        override_path.display()
-    );
-
-    file.write_all(config_content.as_bytes())
-        .map_err(|e| format!("Failed to write config: {}", e))?;
-    file.flush()
-        .map_err(|e| format!("Failed to flush config: {}", e))?;
-
-    Ok(())
-}
-
 /// Source of a version being tested
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VersionSource {
@@ -589,13 +529,6 @@ impl ThreeStepResult {
 
         format!("{}{}{}", fetch_mark, check_mark, test_mark)
     }
-}
-
-/// Result of testing a dependent against a single version
-#[derive(Debug, Clone)]
-pub struct VersionTestResult {
-    pub version_source: VersionSource,
-    pub result: ThreeStepResult,
 }
 
 /// Run three-step ICT (Install/Check/Test) test with early stopping

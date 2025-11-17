@@ -153,7 +153,7 @@ fn print_test_plan(
     versions: &[compile::VersionSource],
     force_versions: &[String],
     force_local: bool,
-    config: &Config,
+    _config: &Config,
 ) {
     // Format dependents list
     let deps_display: Vec<String> = rev_deps.iter()
@@ -448,9 +448,7 @@ struct Config {
     git_hash: Option<String>,
     is_dirty: bool,
     staging_dir: PathBuf,
-    base_override: CrateOverride,
     next_override: CrateOverride,
-    limit: Option<usize>,
     force_versions: Vec<String>,  // List of versions to force (bypass semver)
     error_lines: usize,  // Maximum lines to show per error (0 = unlimited)
 }
@@ -498,10 +496,6 @@ fn is_git_dirty() -> bool {
 }
 
 fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
-    let limit = env::var("COPTER_LIMIT")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok());
-
     // Determine crate name and version based on --crate and --path
     let (crate_name, version, next_override) = if let Some(ref crate_name) = args.crate_name {
         // --crate specified: use that name
@@ -576,9 +570,7 @@ fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
         git_hash,
         is_dirty,
         staging_dir: args.staging_dir.clone(),
-        base_override: CrateOverride::Default,
         next_override,
-        limit,
         force_versions: args.force_versions.clone(),
         error_lines: args.error_lines,
     })
@@ -636,26 +628,6 @@ fn crate_url_with_parms(krate: &str, call: Option<&str>, parms: &[(&str, &str)])
     }
 }
 
-fn get_rev_deps(crate_name: &str, limit: Option<usize>) -> Result<Vec<RevDepName>, Error> {
-    status(&format!("downloading reverse deps for {}", crate_name));
-
-    let deps = api::get_client().crate_reverse_dependencies(crate_name)
-        .map_err(|e| Error::CratesIoApiError(e.to_string()))?;
-
-    let mut all_deps: Vec<String> = deps.dependencies
-        .into_iter()
-        .map(|d| d.dependency.crate_id)
-        .collect();
-
-    // Apply limit if specified
-    if let Some(lim) = limit {
-        all_deps.truncate(lim);
-    }
-
-    status(&format!("{} reverse deps", all_deps.len()));
-
-    Ok(all_deps)
-}
 
 fn http_get_bytes(url: &str) -> Result<Vec<u8>, Error> {
     let resp = ureq::get(url)
@@ -697,26 +669,6 @@ pub struct VersionTestOutcome {
     pub result: compile::ThreeStepResult,
 }
 
-impl VersionTestOutcome {
-    /// Classify this version test as PASSED, REGRESSED, BROKEN, or ERROR
-    fn classify(&self, baseline_outcome: Option<&VersionTestOutcome>) -> VersionStatus {
-        if self.result.is_success() {
-            VersionStatus::Passed
-        } else {
-            // Failed - determine if REGRESSED or BROKEN
-            if let Some(baseline) = baseline_outcome {
-                if baseline.result.is_success() {
-                    VersionStatus::Regressed
-                } else {
-                    VersionStatus::Broken
-                }
-            } else {
-                // No baseline to compare - treat as BROKEN
-                VersionStatus::Broken
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VersionStatus {
@@ -1041,47 +993,8 @@ impl TestResult {
             data: TestResultData::Error(e)
         }
     }
-
-    fn quick_str(&self) -> &'static str {
-        match self.data {
-            TestResultData::Skipped(_) => "skipped",
-            TestResultData::Error(_) => "error",
-            TestResultData::MultiVersion(ref outcomes) => {
-                // For multi-version, return worst status
-                let has_regressed = outcomes.iter().any(|o| {
-                    matches!(o.classify(None), VersionStatus::Regressed)
-                });
-                if has_regressed {
-                    "regressed"
-                } else if outcomes.iter().any(|o| !o.result.is_success()) {
-                    "broken"
-                } else {
-                    "passed"
-                }
-            }
-        }
-    }
-
-    fn html_class(&self) -> &'static str {
-        self.quick_str()
-    }
-
-    fn html_anchor(&self) -> String {
-        sanitize_link(&format!("{}-{}", self.rev_dep.name, self.rev_dep.vers))
-    }
 }
 
-fn sanitize_link(s: &str) -> String {
-    s.chars().map(|c| {
-        let c = c.to_lowercase().collect::<Vec<_>>()[0];
-        if c != '-' && (c < 'a' || c > 'z')
-            && (c < '0' || c > '9') {
-            '_'
-        } else {
-            c
-        }
-    }).collect()
-}
 
 struct TestResultReceiver {
     rev_dep: RevDepName,
@@ -1684,85 +1597,6 @@ fn resolve_latest_version(crate_name: &str, include_prerelease: bool) -> Result<
 }
 
 
-fn compile_with_custom_dep(
-    rev_dep: &RevDep,
-    krate: &CrateOverride,
-    crate_name: &str,
-    staging_dir: &Path
-) -> Result<compile::CompileResult, Error> {
-    // Use staging directory instead of temp dir to cache build artifacts
-    fs::create_dir_all(staging_dir)?;
-    let staging_path = staging_dir.join(format!("{}-{}", rev_dep.name, rev_dep.vers));
-
-    // Check if already unpacked, if not unpack it
-    if !staging_path.exists() {
-        debug!("Unpacking {} to staging for compilation", rev_dep.name);
-        let crate_handle = get_crate_handle(rev_dep)?;
-        fs::create_dir_all(&staging_path)?;
-        crate_handle.unpack_source_to(&staging_path)?;
-    } else {
-        debug!("Using cached staging dir for compilation of {}", rev_dep.name);
-    }
-
-    let source_dir = &staging_path;
-
-    // Note: Cargo.toml restoration now handled automatically by compile::restore_cargo_toml
-
-    // Clean up any existing .cargo/config from previous runs (old system)
-    let cargo_dir = source_dir.join(".cargo");
-    if cargo_dir.exists() {
-        fs::remove_dir_all(&cargo_dir).ok(); // Ignore errors
-    }
-
-    // Build override spec for new --config system
-    let override_spec = match krate {
-        CrateOverride::Default => None,
-        CrateOverride::Source(ref path) => {
-            // Extract directory from Cargo.toml path
-            let override_dir = if path.ends_with("Cargo.toml") {
-                path.parent().unwrap()
-            } else {
-                path.as_path()
-            };
-            Some((crate_name, override_dir))
-        }
-    };
-
-    // Use cargo build with --config flag (legacy: still using build instead of check)
-    let start = std::time::Instant::now();
-    let mut cmd = Command::new("cargo");
-    cmd.arg("build").current_dir(source_dir);
-
-    if let Some((name, path)) = override_spec {
-        // Convert to absolute path
-        let abs_path = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            env::current_dir()?.join(path)
-        };
-
-        let config_str = format!("patch.crates-io.{}.path=\"{}\"", name, abs_path.display());
-        cmd.arg("--config").arg(&config_str);
-        debug!("using --config: {}", config_str);
-    }
-
-    debug!("running cargo: {:?}", cmd);
-    let r = cmd.output()?;
-
-    let duration = start.elapsed();
-    let success = r.status.success();
-
-    debug!("result: {:?}", success);
-
-    Ok(compile::CompileResult {
-        step: compile::CompileStep::Check, // Legacy: using Check for old build command
-        success,
-        stdout: String::from_utf8(r.stdout)?,
-        stderr: String::from_utf8(r.stderr)?,
-        duration,
-        diagnostics: Vec::new(), // Legacy path doesn't use JSON parsing
-    })
-}
 
 struct CrateHandle(PathBuf);
 
@@ -1932,34 +1766,10 @@ fn status(s: &str) {
     });
 }
 
-fn report_quick_result(current_num: usize, total: usize, result: &TestResult) {
-    status_lock(|| {
-        print_status_header();
-        print!("result {} of {}, {} {}: ",
-               current_num,
-               total,
-               result.rev_dep.name,
-               result.rev_dep.vers
-               );
-        let color = match result.data {
-            TestResultData::Skipped(_) => term::color::BRIGHT_CYAN,
-            TestResultData::Error(_) => term::color::BRIGHT_MAGENTA,
-            TestResultData::MultiVersion(_) => term::color::BRIGHT_GREEN, // TODO: Compute worst status
-        };
-        print_color(&format!("{}", result.quick_str()), color);
-        println!("");
 
-        // Print detailed error output immediately for failures
-        // TODO: Migrate to OfferedRow-based failure reporting
-        if matches!(result.data, TestResultData::Error(_)) {
-            report::print_immediate_failure(result);
-        }
-    });
-}
-
-fn report_results(res: Result<Vec<TestResult>, Error>, args: &cli::CliArgs, config: &Config) {
+fn report_results(res: Result<Vec<TestResult>, Error>, _args: &cli::CliArgs, _config: &Config) {
     match res {
-        Ok(results) => {
+        Ok(_results) => {
             // Console table is already printed in streaming mode during run_tests()
             // No need to print again here
 

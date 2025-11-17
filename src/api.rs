@@ -4,8 +4,6 @@
 /// resolving versions, and downloading crate files.
 
 use crates_io_api::SyncClient;
-use semver::Version;
-use std::io::Read;
 use std::time::Duration;
 use log::debug;
 
@@ -115,79 +113,6 @@ pub fn get_top_dependents(
     get_reverse_dependencies(crate_name, Some(limit))
 }
 
-/// Resolve the latest version of a crate from crates.io
-///
-/// # Arguments
-/// * `crate_name` - The crate name to resolve
-///
-/// # Returns
-/// The latest version of the crate
-pub fn resolve_latest_version(crate_name: &str) -> Result<Version, String> {
-    debug!("resolving latest version for {}", crate_name);
-
-    let krate = CRATES_IO_CLIENT
-        .get_crate(crate_name)
-        .map_err(|e| format!("Failed to get crate info: {}", e))?;
-
-    // Pull out the version numbers and sort them
-    let versions: Vec<Version> = krate
-        .versions
-        .iter()
-        .filter_map(|v| Version::parse(&v.num).ok())
-        .collect();
-
-    if versions.is_empty() {
-        return Err(format!("No versions found for crate {}", crate_name));
-    }
-
-    let mut sorted_versions = versions;
-    sorted_versions.sort();
-
-    Ok(sorted_versions
-        .pop()
-        .expect("versions vec should not be empty"))
-}
-
-/// Download a .crate file from crates.io
-///
-/// # Arguments
-/// * `crate_name` - Name of the crate
-/// * `version` - Version string
-///
-/// # Returns
-/// The raw bytes of the .crate file
-pub fn download_crate(crate_name: &str, version: &str) -> Result<Vec<u8>, String> {
-    debug!("downloading {}-{}.crate", crate_name, version);
-
-    let url = format!(
-        "https://crates.io/api/v1/crates/{}/{}/download",
-        crate_name, version
-    );
-
-    let resp = ureq::get(&url)
-        .set("User-Agent", USER_AGENT)
-        .call()
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-    let len = resp
-        .header("Content-Length")
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(0);
-
-    let mut data: Vec<u8> = Vec::with_capacity(len);
-    resp.into_reader()
-        .read_to_end(&mut data)
-        .map_err(|e| format!("Failed to read response: {}", e))?;
-
-    debug!(
-        "downloaded {} bytes for {}-{}",
-        data.len(),
-        crate_name,
-        version
-    );
-
-    Ok(data)
-}
 
 #[cfg(test)]
 mod tests {
@@ -195,13 +120,6 @@ mod tests {
 
     // Note: These tests require network access and hit the real crates.io API
     // They are here to verify the API works but should not be run in CI
-
-    #[test]
-    #[ignore] // Requires network access
-    fn test_resolve_latest_version() {
-        let version = resolve_latest_version("serde").unwrap();
-        assert!(version >= Version::parse("1.0.0").unwrap());
-    }
 
     #[test]
     #[ignore] // Requires network access
