@@ -415,7 +415,15 @@ fn print_main_row(cells: [&str; 5], color: Color) {
         .map(|(cell, width)| truncate_with_padding(cell, width - 2))
         .collect();
 
-    if let Some(ref mut t) = term::stdout() {
+    // Use RGB for bright yellow (better Windows Terminal support)
+    // RGB(255, 255, 102) = bright yellow/gold
+    if color == term::color::BRIGHT_YELLOW {
+        print!("\x1b[38;2;255;255;102m");
+        print!("│ {} │ {} │ {} │ {} │ {} │",
+               displays[0], displays[1], displays[2], displays[3], displays[4]);
+        print!("\x1b[0m");
+        println!();
+    } else if let Some(ref mut t) = term::stdout() {
         let _ = t.fg(color);
         let _ = write!(t, "│ {} │ {} │ {} │ {} │ {} │",
                       displays[0], displays[1], displays[2], displays[3], displays[4]);
@@ -616,14 +624,14 @@ fn format_offered_row(row: &OfferedRow) -> FormattedRow {
 
     // Determine color
     let color = if not_used {
-        term::color::YELLOW  // Brown/yellow for skipped (not used) versions
+        term::color::YELLOW  // Brown (YELLOW/33) for skipped (not used) versions
     } else if is_baseline && !overall_passed {
-        term::color::YELLOW  // Yellow for failed baseline rows (same as skipped)
+        term::color::BRIGHT_YELLOW  // Bright yellow (93) for failed baseline rows
     } else {
         match (row.baseline_passed, overall_passed) {
             (Some(true), true) => term::color::BRIGHT_GREEN,
             (Some(true), false) => term::color::BRIGHT_RED,
-            (Some(false), _) => term::color::YELLOW,  // Yellow for broken (baseline was broken)
+            (Some(false), _) => term::color::BRIGHT_YELLOW,  // Bright yellow for broken (baseline was broken)
             (None, true) => term::color::BRIGHT_GREEN,
             (None, false) => term::color::BRIGHT_RED,
         }
