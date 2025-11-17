@@ -618,12 +618,12 @@ fn format_offered_row(row: &OfferedRow) -> FormattedRow {
     let color = if not_used {
         term::color::YELLOW  // Brown/yellow for skipped (not used) versions
     } else if is_baseline && !overall_passed {
-        term::color::BRIGHT_YELLOW  // Yellow for failed baseline rows
+        term::color::YELLOW  // Yellow for failed baseline rows (same as skipped)
     } else {
         match (row.baseline_passed, overall_passed) {
             (Some(true), true) => term::color::BRIGHT_GREEN,
             (Some(true), false) => term::color::BRIGHT_RED,
-            (Some(false), _) => term::color::BRIGHT_YELLOW,  // Yellow for broken (baseline was broken)
+            (Some(false), _) => term::color::YELLOW,  // Yellow for broken (baseline was broken)
             (None, true) => term::color::BRIGHT_GREEN,
             (None, false) => term::color::BRIGHT_RED,
         }
