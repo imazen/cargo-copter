@@ -455,7 +455,16 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
             versions
         });
 
-        let (result, rows) = run_test_multi_version(config.clone(), rev_dep, version, versions, force_local, config.error_lines);
+        let (result, rows) = run_test_multi_version(
+            config.clone(),
+            rev_dep,
+            version,
+            versions,
+            force_local,
+            config.error_lines,
+            args.should_skip_check(),
+            args.should_skip_test(),
+        );
 
         // rows were already printed during testing, just collect for summary
 
@@ -1100,8 +1109,10 @@ fn run_test_multi_version(
     test_versions: Vec<compile::VersionSource>,
     force_local: bool,
     max_error_lines: usize,
+    skip_check: bool,
+    skip_test: bool,
 ) -> (TestResult, Vec<OfferedRow>) {
-    run_multi_version_test(&config, rev_dep, version, test_versions, force_local, max_error_lines)
+    run_multi_version_test(&config, rev_dep, version, test_versions, force_local, max_error_lines, skip_check, skip_test)
 }
 
 /// Extract the resolved version of a dependency using cargo metadata
@@ -1334,6 +1345,8 @@ fn run_multi_version_test(
     mut test_versions: Vec<compile::VersionSource>,
     force_local: bool, // Whether local "this" versions should be forced
     max_error_lines: usize,
+    skip_check: bool,
+    skip_test: bool,
 ) -> (TestResult, Vec<OfferedRow>) {
     // Status line removed - redundant with table output
     // status(&format!("testing crate {} (multi-version)", rev_dep));
@@ -1490,8 +1503,7 @@ fn run_multi_version_test(
             }
         };
 
-        let skip_check = false; // TODO: Get from args
-        let skip_test = false; // TODO: Get from args
+        // skip_check and skip_test are now function parameters
 
         // Determine expected version for verification and if it's forced
         // IMPORTANT: Baseline is NEVER forced, even if it's in --force-versions list

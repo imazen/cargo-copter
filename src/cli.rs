@@ -43,13 +43,13 @@ pub struct CliArgs {
     #[arg(long, default_value = ".copter/staging")]
     pub staging_dir: PathBuf,
 
-    /// Skip cargo check (only run tests)
+    /// Only fetch dependencies (skip check and test)
     #[arg(long)]
-    pub no_check: bool,
+    pub only_fetch: bool,
 
-    /// Skip cargo test (only run check)
+    /// Only fetch and check (skip tests)
     #[arg(long)]
-    pub no_test: bool,
+    pub only_check: bool,
 
     /// Output results as JSON
     #[arg(long)]
@@ -93,9 +93,9 @@ impl CliArgs {
 
     /// Validate argument combinations
     pub fn validate(&self) -> Result<(), String> {
-        // Can't skip both check and test
-        if self.no_check && self.no_test {
-            return Err("Cannot specify both --no-check and --no-test".to_string());
+        // Can't specify both --only-fetch and --only-check
+        if self.only_fetch && self.only_check {
+            return Err("Cannot specify both --only-fetch and --only-check".to_string());
         }
 
         // Need at least one of: top_dependents, dependents, or dependent_paths
@@ -118,14 +118,25 @@ impl CliArgs {
 
         Ok(())
     }
+
+    /// Should we skip cargo check?
+    pub fn should_skip_check(&self) -> bool {
+        self.only_fetch
+    }
+
+    /// Should we skip cargo test?
+    pub fn should_skip_test(&self) -> bool {
+        self.only_fetch || self.only_check
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+
     #[test]
-    fn test_validate_both_no_flags_fails() {
+    fn test_validate_both_only_flags_fails() {
         let args = CliArgs {
             path: None,
             crate_name: None,
@@ -136,8 +147,8 @@ mod tests {
             force_versions: vec![],
             output: PathBuf::from("report.html"),
             staging_dir: PathBuf::from(".copter/staging"),
-            no_check: true,
-            no_test: true,
+            only_fetch: true,
+            only_check: true,
             json: false,
             clean: false,
             error_lines: 10,
@@ -161,8 +172,8 @@ mod tests {
             force_versions: vec![],
             output: PathBuf::from("report.html"),
             staging_dir: PathBuf::from(".copter/staging"),
-            no_check: false,
-            no_test: false,
+            only_fetch: false,
+            only_check: false,
             json: false,
             clean: false,
             error_lines: 10,
