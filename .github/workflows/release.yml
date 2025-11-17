@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build Release Artifacts
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: cargo-copter
+            asset_name: cargo-copter-linux-x86_64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: cargo-copter
+            asset_name: cargo-copter-linux-aarch64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: cargo-copter
+            asset_name: cargo-copter-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: cargo-copter
+            asset_name: cargo-copter-macos-aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: cargo-copter.exe
+            asset_name: cargo-copter-windows-x86_64.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux ARM)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+
+      - name: Strip binary (Unix)
+        if: runner.os != 'Windows'
+        run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+      - name: Create archive
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+            7z a ${{ matrix.asset_name }}.zip ${{ matrix.asset_name }}
+            echo "ASSET=${{ matrix.asset_name }}.zip" >> $GITHUB_ENV
+          else
+            cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+            tar czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.asset_name }}
+            echo "ASSET=${{ matrix.asset_name }}.tar.gz" >> $GITHUB_ENV
+          fi
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ env.ASSET }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
