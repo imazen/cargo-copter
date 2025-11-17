@@ -179,8 +179,10 @@ cargo-copter --error-lines 50 --top-dependents 5
 cargo-copter --error-lines 0 --top-dependents 5
 ```
 
-## Potential Improvements
+## Architecture Notes
 
-Ideas for future enhancements:
-- Extract original_requirement from dependent's Cargo.toml for more accurate Spec column (currently shows "*")
-- Detect multi-version cargo tree scenarios (transitive dependencies)
+**Metadata vs Cargo.toml**: We use `cargo metadata` because it provides the **resolved** dependency graph (what cargo actually uses), not just requirements. This is more accurate than parsing Cargo.toml files.
+
+**Multi-version detection**: Already implemented via `metadata::find_all_versions()` - detects when multiple versions of the target crate exist in the dependency tree.
+
+**Spec column**: Extracted from `cargo metadata` (`dep.req` field), which shows the actual version requirement used by the dependent.
