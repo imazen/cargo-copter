@@ -21,6 +21,7 @@ use crate::console_tables::{ColSize, TableFormatter};
 pub enum StatusIcon {
     Passed,     // ✓
     Failed,     // ✗
+    Skipped,    // ⊘ (not used - version didn't match what cargo resolved)
 }
 
 impl StatusIcon {
@@ -28,6 +29,7 @@ impl StatusIcon {
         match self {
             StatusIcon::Passed => "✓",
             StatusIcon::Failed => "✗",
+            StatusIcon::Skipped => "⊘",
         }
     }
 }
@@ -75,13 +77,20 @@ impl OfferedCell {
         let offered = row.offered.as_ref().unwrap();
         let overall_passed = row.test.commands.iter().all(|cmd| cmd.result.passed);
 
+        // Check if non-forced version wasn't actually used (cargo resolved to something else)
+        let not_used = !offered.forced && !row.primary.used_offered_version;
+
         // Determine status icon
-        let icon = match (row.baseline_passed, overall_passed) {
-            (Some(true), true) => StatusIcon::Passed,   // PASSED
-            (Some(true), false) => StatusIcon::Failed,  // REGRESSED
-            (Some(false), _) => StatusIcon::Failed,     // BROKEN (baseline failed)
-            (None, true) => StatusIcon::Passed,         // PASSED (no baseline)
-            (None, false) => StatusIcon::Failed,        // FAILED (no baseline)
+        let icon = if not_used {
+            StatusIcon::Skipped  // Version wasn't used (cargo chose different version)
+        } else {
+            match (row.baseline_passed, overall_passed) {
+                (Some(true), true) => StatusIcon::Passed,   // PASSED
+                (Some(true), false) => StatusIcon::Failed,  // REGRESSED
+                (Some(false), _) => StatusIcon::Failed,     // BROKEN (baseline failed)
+                (None, true) => StatusIcon::Passed,         // PASSED (no baseline)
+                (None, false) => StatusIcon::Failed,        // FAILED (no baseline)
+            }
         };
 
         // Determine resolution marker
@@ -546,14 +555,27 @@ fn format_offered_row(row: &OfferedRow) -> FormattedRow {
             CommandType::Test => "test failed",
         });
 
-    let result_status = match (row.baseline_passed, overall_passed, failed_step) {
-        (Some(true), true, _) => "passed".to_string(),
-        (Some(true), false, Some(step)) => step.to_string(),
-        (Some(true), false, None) => "regressed".to_string(),
-        (Some(false), _, _) => "broken".to_string(),
-        (None, true, _) => "passed".to_string(),
-        (None, false, Some(step)) => step.to_string(),
-        (None, false, None) => "failed".to_string(),
+    // Check if this version wasn't actually used (non-forced and cargo chose different version)
+    let not_used = if let Some(ref offered) = row.offered {
+        !offered.forced && !row.primary.used_offered_version
+    } else {
+        false
+    };
+
+    let result_status = if not_used {
+        "not used".to_string()
+    } else {
+        match (row.baseline_passed, overall_passed, failed_step) {
+            (Some(true), true, _) => "passed".to_string(),
+            (Some(true), false, Some(step)) => step.to_string(),
+            (Some(true), false, None) => "regressed".to_string(),
+            // For broken baselines, show the specific failure type
+            (Some(false), _, Some(step)) => format!("{} (broken)", step),
+            (Some(false), _, None) => "broken".to_string(),
+            (None, true, _) => "passed".to_string(),
+            (None, false, Some(step)) => step.to_string(),
+            (None, false, None) => "failed".to_string(),
+        }
     };
 
     // Format ICT marks
@@ -579,12 +601,16 @@ fn format_offered_row(row: &OfferedRow) -> FormattedRow {
     let time_str = format!("{:.1}s", total_time);
 
     // Determine color
-    let color = match (row.baseline_passed, overall_passed) {
-        (Some(true), true) => term::color::BRIGHT_GREEN,
-        (Some(true), false) => term::color::BRIGHT_RED,
-        (Some(false), _) => term::color::BRIGHT_YELLOW,
-        (None, true) => term::color::BRIGHT_GREEN,
-        (None, false) => term::color::BRIGHT_RED,
+    let color = if not_used {
+        term::color::YELLOW  // Brown/yellow for skipped (not used) versions
+    } else {
+        match (row.baseline_passed, overall_passed) {
+            (Some(true), true) => term::color::BRIGHT_GREEN,
+            (Some(true), false) => term::color::BRIGHT_RED,
+            (Some(false), _) => term::color::BRIGHT_YELLOW,  // Yellow for broken baselines
+            (None, true) => term::color::BRIGHT_GREEN,
+            (None, false) => term::color::BRIGHT_RED,
+        }
     };
 
     // Extract error details
