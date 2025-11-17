@@ -22,6 +22,9 @@ use term::color::Color;
 use terminal_size::{Width, terminal_size};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+// Constants for terminal formatting
+const DEFAULT_TERMINAL_WIDTH: usize = 120;
+
 /// Writer for table output - configurable for color/plain text
 pub struct TableWriter<W: Write> {
     writer: W,
@@ -332,12 +335,12 @@ impl TableWidths {
     }
 }
 
-/// Get terminal width or default to 120
+/// Get terminal width or default to DEFAULT_TERMINAL_WIDTH
 fn get_terminal_width() -> usize {
     if let Some((Width(w), _)) = terminal_size() {
         w as usize
     } else {
-        120 // Default width
+        DEFAULT_TERMINAL_WIDTH
     }
 }
 

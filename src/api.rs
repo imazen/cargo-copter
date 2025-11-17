@@ -7,6 +7,8 @@ use log::debug;
 use std::time::Duration;
 
 const USER_AGENT: &str = "cargo-copter/0.1.1 (https://github.com/imazen/cargo-copter)";
+const CRATES_IO_PAGE_SIZE: usize = 100;
+const MAX_API_PAGES: usize = 100; // Safety limit: don't fetch more than 10,000 deps
 
 lazy_static::lazy_static! {
     static ref CRATES_IO_CLIENT: SyncClient = {
@@ -40,13 +42,10 @@ pub fn get_reverse_dependencies(crate_name: &str, limit: Option<usize>) -> Resul
 
     let mut all_deps = Vec::new();
 
-    // The API returns 100 items per page by default
-    let per_page = 100;
-
     // Determine how many pages we need
     let max_pages = match limit {
-        Some(lim) => (lim + per_page - 1) / per_page, // Round up
-        None => 100,                                  // Safety limit: don't fetch more than 10,000 deps
+        Some(lim) => (lim + CRATES_IO_PAGE_SIZE - 1) / CRATES_IO_PAGE_SIZE, // Round up
+        None => MAX_API_PAGES,
     };
 
     for page in 1..=max_pages {
@@ -68,7 +67,7 @@ pub fn get_reverse_dependencies(crate_name: &str, limit: Option<usize>) -> Resul
         }
 
         // If we got less than expected, we've reached the end
-        if page_size < per_page {
+        if page_size < CRATES_IO_PAGE_SIZE {
             break;
         }
 

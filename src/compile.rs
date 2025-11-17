@@ -11,6 +11,10 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+// Constants for formatting and limits
+const LOG_SEPARATOR_LENGTH: usize = 100;
+const MAX_METADATA_LOG_LINES: usize = 100;
+
 // Failure log file path
 lazy_static! {
     static ref FAILURE_LOG: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -165,13 +169,13 @@ fn write_failure_to_log(
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
     let exit_str = exit_code.map(|c| c.to_string()).unwrap_or_else(|| "N/A".to_string());
 
-    let _ = writeln!(writer, "\n{}", "=".repeat(100));
+    let _ = writeln!(writer, "\n{}", "=".repeat(LOG_SEPARATOR_LENGTH));
     let _ = writeln!(
         writer,
         "[{}] {}: {} {} testing {} {}",
         timestamp, log_type, dependent, dependent_version, base_crate, test_label
     );
-    let _ = writeln!(writer, "{}", "=".repeat(100));
+    let _ = writeln!(writer, "{}", "=".repeat(LOG_SEPARATOR_LENGTH));
     let _ = writeln!(writer, "Command: {}", command);
     let _ = writeln!(writer, "Exit code: {}", exit_str);
 
@@ -202,7 +206,7 @@ fn write_failure_to_log(
         }
     }
 
-    let _ = writeln!(writer, "\n{}", "=".repeat(100));
+    let _ = writeln!(writer, "\n{}", "=".repeat(LOG_SEPARATOR_LENGTH));
     let _ = writer.flush();
     // Unlock is automatic when file goes out of scope
 }
@@ -879,10 +883,10 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
         if let Some(resolve) = &parsed.resolve {
             debug!("Metadata resolve section (for debugging multi-version scenario):");
             if let Ok(pretty_json) = serde_json::to_string_pretty(resolve) {
-                // Log first 100 lines to avoid overwhelming logs
+                // Log first MAX_METADATA_LOG_LINES to avoid overwhelming logs
                 for (idx, line) in pretty_json.lines().enumerate() {
-                    if idx >= 100 {
-                        debug!("  ... ({} more lines truncated)", pretty_json.lines().count() - 100);
+                    if idx >= MAX_METADATA_LOG_LINES {
+                        debug!("  ... ({} more lines truncated)", pretty_json.lines().count() - MAX_METADATA_LOG_LINES);
                         break;
                     }
                     debug!("  {}", line);
