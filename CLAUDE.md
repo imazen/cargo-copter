@@ -93,6 +93,7 @@ See **[CONSOLE-FORMAT.md](CONSOLE-FORMAT.md)** for complete specification with 9
 -j, --jobs <N>               # Parallel testing
 --crate <NAME>               # Test published crate without local source
 --clean                      # Purge staging directory before running tests
+--error-lines <N>            # Max lines to show per error (default: 10, 0=unlimited)
 ```
 
 **Examples**:
@@ -123,6 +124,15 @@ cargo-copter --test-versions 0.7.0 --force-versions
 ### Clean cache and retest
 ```bash
 cargo-copter --clean --top-dependents 5
+```
+
+### Show more error details
+```bash
+# Show 50 lines per error instead of default 10
+cargo-copter --error-lines 50 --top-dependents 5
+
+# Show unlimited error lines (full output)
+cargo-copter --error-lines 0 --top-dependents 5
 ```
 
 ## Next Steps

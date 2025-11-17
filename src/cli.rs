@@ -68,6 +68,10 @@ pub struct CliArgs {
     /// Clean staging directory before running tests (purges all cached builds)
     #[arg(long)]
     pub clean: bool,
+
+    /// Number of error lines to show for compilation failures (default: 10)
+    #[arg(long, default_value = "10")]
+    pub error_lines: usize,
 }
 
 impl CliArgs {
@@ -154,6 +158,7 @@ mod tests {
             no_test: true,
             json: false,
             clean: false,
+            error_lines: 10,
         };
         assert!(args.validate().is_err());
     }
@@ -175,6 +180,7 @@ mod tests {
             no_test: false,
             json: false,
             clean: false,
+            error_lines: 10,
         };
         assert!(args.validate().is_err());
     }
@@ -199,6 +205,7 @@ mod tests {
             no_test: false,
             json: false,
             clean: false,
+            error_lines: 10,
         };
         let result = args.validate();
         std::fs::remove_file("./Cargo.toml.test").ok();
@@ -222,6 +229,7 @@ mod tests {
             no_test: false,
             json: false,
             clean: false,
+            error_lines: 10,
         };
         assert!(args.is_offline_mode());
     }
@@ -243,6 +251,7 @@ mod tests {
             no_test: false,
             json: false,
             clean: false,
+            error_lines: 10,
         };
         assert!(!args.is_offline_mode());
     }

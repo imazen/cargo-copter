@@ -383,7 +383,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
         // report_quick_result(i + 1, total, &result);
 
         // Convert to OfferedRows and stream print
-        let rows = result.to_offered_rows();
+        let rows = result.to_offered_rows(config.error_lines);
         for (j, row) in rows.iter().enumerate() {
             let is_last_in_group = j == rows.len() - 1;
             report::print_offered_row(row, is_last_in_group);
@@ -436,6 +436,7 @@ struct Config {
     next_override: CrateOverride,
     limit: Option<usize>,
     force_versions: Vec<String>,  // List of versions to force (bypass semver)
+    error_lines: usize,  // Maximum lines to show per error (0 = unlimited)
 }
 
 impl Config {
@@ -563,6 +564,7 @@ fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
         next_override,
         limit,
         force_versions: args.force_versions.clone(),
+        error_lines: args.error_lines,
     })
 }
 
@@ -801,12 +803,24 @@ pub enum VersionSource {
 }
 
 /// Extract error message from diagnostics with stderr fallback
-fn extract_error_with_fallback(diagnostics: &[error_extract::Diagnostic], stderr: &str) -> String {
-    let msg = error_extract::extract_error_summary(diagnostics);
+fn extract_error_with_fallback(diagnostics: &[error_extract::Diagnostic], stderr: &str, max_lines: usize) -> String {
+    let msg = error_extract::extract_error_summary(diagnostics, max_lines);
     if !msg.is_empty() {
         msg
     } else {
-        stderr.to_string()
+        // Also limit stderr output
+        if max_lines == 0 {
+            stderr.to_string()
+        } else {
+            let lines: Vec<&str> = stderr.lines().collect();
+            if lines.len() > max_lines {
+                let mut truncated = lines[..max_lines].join("\n");
+                truncated.push_str(&format!("\n... ({} more lines)", lines.len() - max_lines));
+                truncated
+            } else {
+                stderr.to_string()
+            }
+        }
     }
 }
 
@@ -815,9 +829,10 @@ fn compile_result_to_command(
     compile_result: &compile::CompileResult,
     command_type: CommandType,
     crate_name: &str,
+    max_error_lines: usize,
 ) -> TestCommand {
     let failures = if !compile_result.success {
-        let error_msg = extract_error_with_fallback(&compile_result.diagnostics, &compile_result.stderr);
+        let error_msg = extract_error_with_fallback(&compile_result.diagnostics, &compile_result.stderr, max_error_lines);
         vec![CrateFailure {
             crate_name: crate_name.to_string(),
             error_message: error_msg,
@@ -839,7 +854,7 @@ fn compile_result_to_command(
 
 impl TestResult {
     /// Convert TestResult to OfferedRows for streaming output
-    fn to_offered_rows(&self) -> Vec<OfferedRow> {
+    fn to_offered_rows(&self, max_error_lines: usize) -> Vec<OfferedRow> {
         match &self.data {
             TestResultData::MultiVersion(outcomes) => {
                 let mut rows = Vec::new();
@@ -892,7 +907,8 @@ impl TestResult {
                     commands.push(compile_result_to_command(
                         &outcome.result.fetch,
                         CommandType::Fetch,
-                        &self.rev_dep.name
+                        &self.rev_dep.name,
+                        max_error_lines
                     ));
 
                     // Check command (if ran)
@@ -900,7 +916,8 @@ impl TestResult {
                         commands.push(compile_result_to_command(
                             check,
                             CommandType::Check,
-                            &self.rev_dep.name
+                            &self.rev_dep.name,
+                            max_error_lines
                         ));
                     }
 
@@ -909,7 +926,8 @@ impl TestResult {
                         commands.push(compile_result_to_command(
                             test,
                             CommandType::Test,
-                            &self.rev_dep.name
+                            &self.rev_dep.name,
+                            max_error_lines
                         ));
                     }
 

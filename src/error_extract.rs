@@ -177,10 +177,28 @@ fn format_diagnostic_text(msg: &CompilerMessage) -> String {
 
 /// Extract just error messages for quick display
 /// Uses the rendered field which contains the full formatted error with code snippets
-pub fn extract_error_summary(diagnostics: &[Diagnostic]) -> String {
+///
+/// # Arguments
+/// * `diagnostics` - The diagnostics to extract errors from
+/// * `max_lines` - Maximum number of lines to include per error (0 = unlimited)
+pub fn extract_error_summary(diagnostics: &[Diagnostic], max_lines: usize) -> String {
     diagnostics.iter()
         .filter(|d| d.level.is_error())
-        .map(|d| d.rendered.clone())
+        .map(|d| {
+            if max_lines == 0 {
+                d.rendered.clone()
+            } else {
+                // Limit to max_lines, appending "..." if truncated
+                let lines: Vec<&str> = d.rendered.lines().collect();
+                if lines.len() > max_lines {
+                    let mut truncated = lines[..max_lines].join("\n");
+                    truncated.push_str(&format!("\n... ({} more lines)", lines.len() - max_lines));
+                    truncated
+                } else {
+                    d.rendered.clone()
+                }
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n\n")
 }
@@ -246,8 +264,8 @@ mod tests {
             },
         ];
 
-        let summary = extract_error_summary(&diagnostics);
-        assert!(summary.contains("error[E0425]"));
+        let summary = extract_error_summary(&diagnostics, 0);
+        assert!(summary.contains("full error text"));
         assert!(summary.contains("cannot find value"));
         assert!(summary.contains("src/main.rs:10:5"));
         assert!(!summary.contains("unused variable")); // Warnings excluded
