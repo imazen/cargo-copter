@@ -897,10 +897,14 @@ impl TestResult {
                     }
 
                     // Convert all_crate_versions to TransitiveTest entries
-                    // Filter out the primary dependency (only show additional/different versions)
+                    // Filter out the primary dependency (only show subdependencies with different versions)
                     let primary_version = &primary.resolved_version;
+                    let main_dependent_name = &self.rev_dep.name;
                     let transitive = outcome.result.all_crate_versions.iter()
-                        .filter(|(_, resolved_version, _)| resolved_version != primary_version)
+                        .filter(|(_, resolved_version, dependent_name)| {
+                            // Exclude: same version as primary, or from main dependent itself
+                            resolved_version != primary_version && dependent_name != main_dependent_name
+                        })
                         .map(|(spec, resolved_version, dependent_name)| {
                             TransitiveTest {
                                 dependency: DependencyRef {
