@@ -331,6 +331,40 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
                     versions.push(non_forced);
                 }
             }
+
+            // Reorder versions so non-forced tests run before forced tests for the same version
+            // This provides clearer A/B comparison in the output
+            versions.sort_by(|a, b| {
+                use std::cmp::Ordering;
+
+                // First, compare by version/path to group same versions together
+                let version_cmp = match (a, b) {
+                    (compile::VersionSource::Published { version: va, .. },
+                     compile::VersionSource::Published { version: vb, .. }) => {
+                        va.cmp(vb)
+                    }
+                    (compile::VersionSource::Local { path: pa, .. },
+                     compile::VersionSource::Local { path: pb, .. }) => {
+                        pa.cmp(pb)
+                    }
+                    // Local versions come after published versions
+                    (compile::VersionSource::Published { .. }, compile::VersionSource::Local { .. }) => {
+                        Ordering::Less
+                    }
+                    (compile::VersionSource::Local { .. }, compile::VersionSource::Published { .. }) => {
+                        Ordering::Greater
+                    }
+                };
+
+                // If versions are the same, non-forced comes before forced
+                if version_cmp == Ordering::Equal {
+                    let a_forced = a.is_forced();
+                    let b_forced = b.is_forced();
+                    a_forced.cmp(&b_forced)  // false < true, so non-forced comes first
+                } else {
+                    version_cmp
+                }
+            });
         }
 
         // Auto-add "this" (local WIP) in forced mode if not already specified
