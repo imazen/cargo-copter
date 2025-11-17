@@ -51,7 +51,7 @@ pub fn get_reverse_dependencies(
 
     // Determine how many pages we need
     let max_pages = match limit {
-        Some(lim) => ((lim + per_page - 1) / per_page), // Round up
+        Some(lim) => (lim + per_page - 1) / per_page, // Round up
         None => 100, // Safety limit: don't fetch more than 10,000 deps
     };
 

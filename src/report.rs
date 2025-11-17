@@ -176,20 +176,23 @@ impl TableWidths {
     }
 
     /// Calculate minimum offered column width for given versions
-    pub fn calculate_offered_width(versions: &[String], display_version: &str) -> usize {
+    pub fn calculate_offered_width(versions: &[String], display_version: &str, force_versions: bool) -> usize {
         let mut max_width = "- baseline".len(); // 10 chars
+
+        // Forced marker is 6 chars: " [≠→!]"
+        let forced_width = if force_versions { 6 } else { 0 };
 
         // Check all test versions
         for version in versions {
-            // Worst case: "✗ ≠version [≠→!]"
-            // Icon (1) + space (1) + resolution (1) + version + forced marker (6)
-            let width = 1 + 1 + 1 + version.len() + 6;
+            // Format: "{icon} {resolution}{version}[ [≠→!]]"
+            // Icon (1) + space (1) + resolution (1) + version + optional forced marker
+            let width = 1 + 1 + 1 + version.len() + forced_width;
             max_width = max_width.max(width);
         }
 
         // Check "this(version)" format
         let this_format = format!("this({})", display_version);
-        let this_width = 1 + 1 + 1 + this_format.len() + 6;
+        let this_width = 1 + 1 + 1 + this_format.len() + forced_width;
         max_width = max_width.max(this_width);
 
         // Add small padding for safety
@@ -210,8 +213,8 @@ fn get_terminal_width() -> usize {
 static WIDTHS: OnceLock<TableWidths> = OnceLock::new();
 
 /// Initialize table widths based on versions being tested
-pub fn init_table_widths(versions: &[String], display_version: &str) {
-    let offered_width = TableWidths::calculate_offered_width(versions, display_version);
+pub fn init_table_widths(versions: &[String], display_version: &str, force_versions: bool) {
+    let offered_width = TableWidths::calculate_offered_width(versions, display_version, force_versions);
     let widths = TableWidths::new_with_offered(get_terminal_width(), Some(offered_width));
     let _ = WIDTHS.set(widths); // Ignore error if already initialized
 }

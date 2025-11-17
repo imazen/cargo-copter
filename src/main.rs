@@ -374,7 +374,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
     let version_strings: Vec<String> = versions_to_test.iter()
         .map(|v| v.label())
         .collect();
-    report::init_table_widths(&version_strings, &config.display_version());
+    report::init_table_widths(&version_strings, &config.display_version(), !config.force_versions.is_empty());
 
     // Print table header for streaming output
     let total = result_rxs.len();
