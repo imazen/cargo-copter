@@ -634,23 +634,6 @@ pub fn summarize_offered_rows(rows: &[OfferedRow]) -> TestSummary {
     }
 }
 
-/// Format summary statistics as a string
-pub fn format_summary(summary: &TestSummary) -> String {
-    let mut output = String::new();
-    output.push_str("\nSummary:\n");
-    output.push_str(&format!("  ✓ Passed:    {}\n", summary.passed));
-    output.push_str(&format!("  ✗ Regressed: {}\n", summary.regressed));
-    output.push_str(&format!("  ⚠ Broken:    {}\n", summary.broken));
-    output.push_str("  ━━━━━━━━━━━━━\n");
-    output.push_str(&format!("  Total:       {}\n", summary.total));
-    output.push('\n');
-    output
-}
-
-/// Print summary statistics
-pub fn print_summary(summary: &TestSummary) {
-    print!("{}", format_summary(summary));
-}
 /// Statistics for comparison table
 #[derive(Debug, Clone)]
 pub struct ComparisonStats {
@@ -880,16 +863,6 @@ pub fn print_comparison_table(stats_list: &[ComparisonStats]) {
 
     print_delta("Fully passing", |s| s.fully_passing);
     println!();
-
-    // Print regression details for each version that has regressions
-    for stats in stats_list.iter().skip(1) {  // Skip baseline
-        if !stats.regressions.is_empty() {
-            println!("\n  {} regressions:", stats.version_label);
-            for regressed in &stats.regressions {
-                println!("    - {}", regressed);
-            }
-        }
-    }
 }
 
 //

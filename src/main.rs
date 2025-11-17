@@ -412,11 +412,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
     // Print table footer
     report::print_table_footer();
 
-    // Print summary
-    let summary = report::summarize_offered_rows(&all_rows);
-    report::print_summary(&summary);
-
-    // Print comparison table
+    // Print comparison table (replaces old summary)
     let comparison_stats = report::generate_comparison_table(&all_rows);
     report::print_comparison_table(&comparison_stats);
 
@@ -432,6 +428,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
     }
 
     // Exit with error code if there were regressions
+    let summary = report::summarize_offered_rows(&all_rows);
     if summary.regressed > 0 {
         std::process::exit(-2);
     }
