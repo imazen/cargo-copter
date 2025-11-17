@@ -845,8 +845,23 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
         all_versions.iter().map(|(_, resolved, _)| resolved).collect();
 
     if unique_versions.len() > 1 {
-        // Multiple versions detected - log them
+        // Multiple versions detected - log them with metadata context
         warn!("⚠️  Multiple versions of '{}' detected in dependency tree:", crate_name);
+
+        // Log the raw metadata JSON for debugging (just the resolve section to keep it manageable)
+        if let Some(resolve) = &parsed.resolve {
+            debug!("Metadata resolve section (for debugging multi-version scenario):");
+            if let Ok(pretty_json) = serde_json::to_string_pretty(resolve) {
+                // Log first 100 lines to avoid overwhelming logs
+                for (idx, line) in pretty_json.lines().enumerate() {
+                    if idx >= 100 {
+                        debug!("  ... ({} more lines truncated)", pretty_json.lines().count() - 100);
+                        break;
+                    }
+                    debug!("  {}", line);
+                }
+            }
+        }
         for (spec, resolved, dependent) in &all_versions {
             warn!("  {} requires {} → resolved to {} (via {})", dependent, spec, resolved, crate_name);
         }
