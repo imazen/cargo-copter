@@ -32,6 +32,21 @@ pub fn log_failure(
     stdout: &str,
     stderr: &str,
 ) {
+    log_failure_with_diagnostics(dependent, dependent_version, base_crate, test_label, command, exit_code, stdout, stderr, &[]);
+}
+
+/// Log a compilation failure with parsed diagnostics for better readability
+pub fn log_failure_with_diagnostics(
+    dependent: &str,
+    dependent_version: &str,
+    base_crate: &str,
+    test_label: &str,  // "baseline", "WIP", or version number
+    command: &str,
+    exit_code: Option<i32>,
+    stdout: &str,
+    stderr: &str,
+    diagnostics: &[Diagnostic],
+) {
     let log_path = {
         let log = FAILURE_LOG.lock().unwrap();
         match &*log {
@@ -71,11 +86,38 @@ pub fn log_failure(
     let _ = writeln!(writer, "{}", "=".repeat(100));
     let _ = writeln!(writer, "Command: {}", command);
     let _ = writeln!(writer, "Exit code: {}", exit_str);
-    let _ = writeln!(writer, "\n--- STDOUT ---");
-    let _ = writeln!(writer, "{}", stdout);
-    let _ = writeln!(writer, "\n--- STDERR ---");
-    let _ = writeln!(writer, "{}", stderr);
-    let _ = writeln!(writer, "{}", "=".repeat(100));
+
+    // If we have parsed diagnostics, show them in a human-readable format
+    if !diagnostics.is_empty() {
+        let _ = writeln!(writer, "\n--- ERRORS ---");
+        for (idx, diag) in diagnostics.iter().enumerate() {
+            let level_str = match diag.level {
+                crate::error_extract::DiagnosticLevel::Error => "error",
+                crate::error_extract::DiagnosticLevel::Warning => "warning",
+                crate::error_extract::DiagnosticLevel::Help => "help",
+                crate::error_extract::DiagnosticLevel::Note => "note",
+                crate::error_extract::DiagnosticLevel::Other(ref s) => s.as_str(),
+            };
+            let _ = writeln!(writer, "\n{}. [{}] {}", idx + 1, level_str, diag.message);
+
+            // Show the rendered error which includes code snippets and spans
+            if !diag.rendered.is_empty() {
+                let _ = writeln!(writer, "{}", diag.rendered);
+            }
+        }
+    } else {
+        // No diagnostics available - fall back to raw output
+        let _ = writeln!(writer, "\n--- STDERR (no structured errors) ---");
+        // Filter out JSON lines to make it more readable
+        for line in stderr.lines() {
+            // Skip lines that look like cargo JSON output
+            if !line.trim_start().starts_with('{') {
+                let _ = writeln!(writer, "{}", line);
+            }
+        }
+    }
+
+    let _ = writeln!(writer, "\n{}", "=".repeat(100));
 
     let _ = writer.flush();
 
@@ -640,9 +682,9 @@ pub fn run_three_step_ict(
     };
 
     if fetch.failed() {
-        // Log failure
+        // Log failure with diagnostics
         if let (Some(dep_name), Some(dep_ver), Some(label)) = (dependent_name, dependent_version, test_label) {
-            log_failure(
+            log_failure_with_diagnostics(
                 dep_name,
                 dep_ver,
                 base_crate_name,
@@ -651,6 +693,7 @@ pub fn run_three_step_ict(
                 None,
                 &fetch.stdout,
                 &fetch.stderr,
+                &fetch.diagnostics,
             );
         }
 
@@ -671,9 +714,9 @@ pub fn run_three_step_ict(
     let check = if !skip_check {
         let result = compile_crate(crate_path, CompileStep::Check, override_spec)?;
         if result.failed() {
-            // Log failure
+            // Log failure with diagnostics
             if let (Some(dep_name), Some(dep_ver), Some(label)) = (dependent_name, dependent_version, test_label) {
-                log_failure(
+                log_failure_with_diagnostics(
                     dep_name,
                     dep_ver,
                     base_crate_name,
@@ -682,6 +725,7 @@ pub fn run_three_step_ict(
                     None,
                     &result.stdout,
                     &result.stderr,
+                    &result.diagnostics,
                 );
             }
 
@@ -722,7 +766,7 @@ pub fn run_three_step_ict(
     if let Some(ref test_result) = test {
         if test_result.failed() {
             if let (Some(dep_name), Some(dep_ver), Some(label)) = (dependent_name, dependent_version, test_label) {
-                log_failure(
+                log_failure_with_diagnostics(
                     dep_name,
                     dep_ver,
                     base_crate_name,
@@ -731,6 +775,7 @@ pub fn run_three_step_ict(
                     None,
                     &test_result.stdout,
                     &test_result.stderr,
+                    &test_result.diagnostics,
                 );
             }
         }
