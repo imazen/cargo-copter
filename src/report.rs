@@ -174,7 +174,7 @@ impl TableWidths {
     }
 
     /// Calculate minimum offered column width for given versions
-    pub fn calculate_offered_width(versions: &[String], display_version: &str, force_versions: bool) -> usize {
+    pub fn calculate_offered_width(versions: &[String], _display_version: &str, force_versions: bool) -> usize {
         let mut max_width = "- baseline".len(); // 10 chars
 
         // Forced marker is 6 chars: " [≠→!]"
@@ -188,12 +188,7 @@ impl TableWidths {
             max_width = max_width.max(width);
         }
 
-        // Check "this(version)" format
-        let this_format = format!("this({})", display_version);
-        let this_width = 1 + 1 + 1 + this_format.len() + forced_width;
-        max_width = max_width.max(this_width);
-
-        // Add small padding for safety
+        // Add padding for proper spacing
         max_width + 2
     }
 }
