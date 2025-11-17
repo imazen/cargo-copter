@@ -504,6 +504,33 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
 
     // Exit with error code if there were regressions
     let summary = report::summarize_offered_rows(&all_rows);
+
+    // Show failure log path if there were any failures
+    if summary.regressed > 0 || summary.broken > 0 {
+        println!("\nDetailed failure logs: {}", log_path.display());
+    }
+
+    // Check for skipped (non-forced) versions and suggest --force-versions
+    let skipped_versions: Vec<String> = all_rows
+        .iter()
+        .filter(|row| {
+            if let Some(offered) = &row.offered {
+                !offered.forced && !row.primary.used_offered_version
+            } else {
+                false
+            }
+        })
+        .filter_map(|row| row.offered.as_ref().map(|o| o.version.clone()))
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    if !skipped_versions.is_empty() {
+        let versions_list = skipped_versions.join(" ");
+        println!("\nℹ️  Some versions were not used by cargo (semver incompatible):");
+        println!("   To force-test these versions anyway, use: --force-versions {}", versions_list);
+    }
+
     if summary.regressed > 0 {
         std::process::exit(-2);
     }
