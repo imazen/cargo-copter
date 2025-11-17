@@ -370,6 +370,12 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
         result_rxs.push(result);
     }
 
+    // Initialize table widths based on versions being tested
+    let version_strings: Vec<String> = versions_to_test.iter()
+        .map(|v| v.label())
+        .collect();
+    report::init_table_widths(&version_strings, &config.display_version());
+
     // Print table header for streaming output
     let total = result_rxs.len();
     report::print_table_header(&config.crate_name, &config.display_version(), total);

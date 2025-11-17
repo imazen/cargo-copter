@@ -5,11 +5,11 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use crate::{OfferedRow, DependencyRef, OfferedVersion, TestExecution, TestCommand, CommandType, CommandResult, CrateFailure, TransitiveTest, VersionSource};
 use term::color::Color;
 use unicode_width::{UnicodeWidthStr, UnicodeWidthChar};
 use terminal_size::{Width, terminal_size};
-use lazy_static::lazy_static;
 
 //
 // Rendering Model Types
@@ -139,18 +139,22 @@ struct TableWidths {
 
 impl TableWidths {
     fn new(terminal_width: usize) -> Self {
+        Self::new_with_offered(terminal_width, None)
+    }
+
+    fn new_with_offered(terminal_width: usize, offered_width: Option<usize>) -> Self {
         // Borders: │ = 6 characters (1 before each column + 1 at end)
         let borders = 6;
         let available = terminal_width.saturating_sub(borders);
 
         // Use fixed widths for columns with known/predictable values
-        // Offered: "✗ ≠0.8.91-preview [≠→!]" max ~28 chars
-        let offered = 25;
+        // Offered: use provided width or default to 25
+        let offered = offered_width.unwrap_or(25);
         // Spec: "^0.8.52" or "→ =this" max ~12 chars
         let spec = 12;
         // Resolved: "0.8.91-preview 📦" max ~18 chars
         let resolved = 18;
-        // Result: "REGRESSED ✓✗  1.3s" fixed ~20 chars
+        // Result: "build failed ✓✗-  1.3s" fixed ~25 chars
         let result = 25;
 
         // Dependent gets remaining space (for long crate names)
@@ -170,6 +174,27 @@ impl TableWidths {
             total: terminal_width,
         }
     }
+
+    /// Calculate minimum offered column width for given versions
+    pub fn calculate_offered_width(versions: &[String], display_version: &str) -> usize {
+        let mut max_width = "- baseline".len(); // 10 chars
+
+        // Check all test versions
+        for version in versions {
+            // Worst case: "✗ ≠version [≠→!]"
+            // Icon (1) + space (1) + resolution (1) + version + forced marker (6)
+            let width = 1 + 1 + 1 + version.len() + 6;
+            max_width = max_width.max(width);
+        }
+
+        // Check "this(version)" format
+        let this_format = format!("this({})", display_version);
+        let this_width = 1 + 1 + 1 + this_format.len() + 6;
+        max_width = max_width.max(this_width);
+
+        // Add small padding for safety
+        max_width + 2
+    }
 }
 
 /// Get terminal width or default to 120
@@ -181,16 +206,26 @@ fn get_terminal_width() -> usize {
     }
 }
 
-// Calculate table widths once at startup
-lazy_static! {
-    static ref WIDTHS: TableWidths = TableWidths::new(get_terminal_width());
+// Table widths - initialized once with actual version data
+static WIDTHS: OnceLock<TableWidths> = OnceLock::new();
+
+/// Initialize table widths based on versions being tested
+pub fn init_table_widths(versions: &[String], display_version: &str) {
+    let offered_width = TableWidths::calculate_offered_width(versions, display_version);
+    let widths = TableWidths::new_with_offered(get_terminal_width(), Some(offered_width));
+    let _ = WIDTHS.set(widths); // Ignore error if already initialized
+}
+
+/// Get table widths (with fallback to defaults if not initialized)
+fn get_widths() -> &'static TableWidths {
+    WIDTHS.get_or_init(|| TableWidths::new(get_terminal_width()))
 }
 
 /// Print table header
 /// Format table header as a string
 pub fn format_table_header(crate_name: &str, display_version: &str, total_deps: usize) -> String {
     let term_width = get_terminal_width();
-    let w = &*WIDTHS;
+    let w = get_widths();
 
     let mut output = String::new();
     output.push_str(&format!("\n{}\n", "=".repeat(term_width)));
@@ -221,7 +256,7 @@ pub fn print_table_header(crate_name: &str, display_version: &str, total_deps: u
 
 /// Print separator line between dependents
 pub fn print_separator_line() {
-    let w = &*WIDTHS;
+    let w = get_widths();
     println!("├{:─<width1$}┼{:─<width2$}┼{:─<width3$}┼{:─<width4$}┼{:─<width5$}┤",
              "", "", "", "", "",
              width1 = w.offered, width2 = w.spec, width3 = w.resolved,
@@ -230,7 +265,7 @@ pub fn print_separator_line() {
 
 /// Format table footer as a string
 pub fn format_table_footer() -> String {
-    let w = &*WIDTHS;
+    let w = get_widths();
     format!("└{:─<width1$}┴{:─<width2$}┴{:─<width3$}┴{:─<width4$}┴{:─<width5$}┘\n",
              "", "", "", "", "",
              width1 = w.offered, width2 = w.spec, width3 = w.resolved,
@@ -269,7 +304,7 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: O
     }
 
     // Use dynamic widths
-    let w = &*WIDTHS;
+    let w = get_widths();
 
     // Print main row
     let offered_display = truncate_with_padding(&formatted.offered, w.offered - 2);
@@ -1024,7 +1059,7 @@ pub fn export_markdown_table_report(rows: &[OfferedRow], output_path: &PathBuf, 
 /// Format an OfferedRow as a string (similar to print_offered_row but returns String)
 fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String {
     let formatted = format_offered_row(row);
-    let w = &*WIDTHS;
+    let w = get_widths();
 
     let mut output = String::new();
 
