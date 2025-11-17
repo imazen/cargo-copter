@@ -94,12 +94,12 @@ impl TableFormatter {
 
     /// Add a row to the table
     ///
-    /// Automatically generates the separator from the previous row (if any).
+    /// Automatically generates separator and formats cells with alignment/truncation.
     ///
     /// # Arguments
-    /// * `row_content` - Pre-formatted row string (e.g., "│ cell1 │ cell2 │")
+    /// * `cells` - Cell contents (will be truncated/padded to fit columns)
     /// * `current_layout` - Column layout for this row
-    pub fn add_row(&mut self, row_content: &str, current_layout: &[ColSize]) {
+    pub fn add_row(&mut self, cells: &[&str], current_layout: &[ColSize]) {
         // Generate separator from previous row (if any)
         if let Some(ref prev_layout) = self.previous_layout {
             let separator = format_separator_row(prev_layout, current_layout);
@@ -107,12 +107,31 @@ impl TableFormatter {
             self.output.push('\n');
         }
 
-        // Add the row content
-        self.output.push_str(row_content);
+        // Format the row with proper alignment and truncation
+        let row_content = Self::format_row_cells(cells, current_layout);
+        self.output.push_str(&row_content);
         self.output.push('\n');
 
         // Store current layout for next separator
         self.previous_layout = Some(current_layout.to_vec());
+    }
+
+    /// Format cells into a table row with borders, alignment, and truncation
+    fn format_row_cells(cells: &[&str], layout: &[ColSize]) -> String {
+        use unicode_width::UnicodeWidthStr;
+
+        let mut result = String::from("│");
+
+        for (cell, col) in cells.iter().zip(layout.iter()) {
+            // Truncate or pad cell to fit column width (accounting for padding spaces)
+            let content_width = col.width.saturating_sub(2); // 2 for padding spaces
+            let cell_display = truncate_and_pad(cell, content_width);
+            result.push(' ');
+            result.push_str(&cell_display);
+            result.push_str(" │");
+        }
+
+        result
     }
 
     /// Get the accumulated output
@@ -129,6 +148,50 @@ impl TableFormatter {
     pub fn reset(&mut self) {
         self.output.clear();
         self.previous_layout = None;
+    }
+}
+
+/// Truncate and pad string to exact width, handling Unicode properly
+fn truncate_and_pad(s: &str, max_width: usize) -> String {
+    use unicode_width::{UnicodeWidthStr, UnicodeWidthChar};
+
+    let display_w = UnicodeWidthStr::width(s);
+
+    if display_w > max_width {
+        // Truncate
+        let mut result = String::new();
+        let mut current_width = 0;
+        let chars: Vec<char> = s.chars().collect();
+
+        // Reserve space for "..."
+        let target_width = if max_width >= 3 { max_width - 3 } else { max_width };
+
+        for c in chars.iter() {
+            let c_width = UnicodeWidthChar::width(*c).unwrap_or(1);
+
+            if current_width + c_width > target_width {
+                break;
+            }
+
+            result.push(*c);
+            current_width += c_width;
+        }
+
+        if max_width >= 3 {
+            result.push_str("...");
+            current_width += 3;
+        }
+
+        // Pad remaining if needed
+        while current_width < max_width {
+            result.push(' ');
+            current_width += 1;
+        }
+
+        result
+    } else {
+        // Pad to width
+        format!("{:width$}", s, width = max_width - display_w + s.len())
     }
 }
 
@@ -591,40 +654,46 @@ mod tests {
 
     #[test]
     fn test_table_formatter_streaming() {
-        // Demonstrate streaming table formatter usage
+        // Demonstrate streaming table formatter with cell-based API
         let mut formatter = TableFormatter::new();
 
-        // Row 1: Regular 5-column table row
+        // Row 1: Header row with 5 columns
         let layout1 = vec![
-            ColSize::new(10, true),  // Offered column
-            ColSize::new(12, true),  // Spec column
-            ColSize::new(18, true),  // Resolved column
-            ColSize::new(35, true),  // Dependent column
-            ColSize::new(25, true),  // Result column
+            ColSize::new(12, true),  // Offered
+            ColSize::new(14, true),  // Spec
+            ColSize::new(20, true),  // Resolved
+            ColSize::new(30, true),  // Dependent
+            ColSize::new(26, true),  // Result
         ];
-        formatter.add_row("│  Offered  │    Spec    │     Resolved     │            Dependent              │   Result         Time   │", &layout1);
+        let cells1 = vec!["Offered", "Spec", "Resolved", "Dependent", "Result Time"];
+        formatter.add_row(&cells1, &layout1);
 
-        // Row 2: Same layout (will generate separator above)
-        formatter.add_row("│ - baseline│ 0.8        │ 0.8.52 📦        │ my-crate 1.0.0                    │   passed ✓✓✓  0.5s      │", &layout1);
+        // Row 2: Data row (will generate separator above)
+        let cells2 = vec!["- baseline", "0.8", "0.8.52 📦", "my-crate 1.0.0", "passed ✓✓✓ 0.5s"];
+        formatter.add_row(&cells2, &layout1);
 
         // Row 3: Error row spanning columns 2-5
         let layout_error = vec![
-            ColSize::new(10, false), // Offered (no separator)
-            ColSize::new(90, true),  // Merged columns 2-5 (with separator)
+            ColSize::new(12, false),  // Offered (no separator)
+            ColSize::new(90, true),   // Merged columns 2-5
         ];
-        formatter.add_row("│          │ Error: cargo test failed                                                          │", &layout_error);
+        let cells3 = vec!["", "Error: cargo test failed - something went wrong"];
+        formatter.add_row(&cells3, &layout_error);
 
         // Row 4: Back to regular layout
-        formatter.add_row("│ ✓ =0.8.52 │ 0.8        │ 0.8.52 📦        │ my-crate 1.0.0                    │   passed ✓✓✓  0.5s      │", &layout1);
+        let cells4 = vec!["✓ =0.8.52", "0.8", "0.8.52 📦", "my-crate 1.0.0", "passed ✓✓✓ 0.5s"];
+        formatter.add_row(&cells4, &layout1);
 
         let output = formatter.finish();
 
         println!("\nGenerated table:");
         println!("{}", output);
 
-        // Verify we have separators
+        // Verify we have proper formatting
         assert!(output.contains('─'), "Should have horizontal lines");
         assert!(output.contains('├') || output.contains('┌'), "Should have left junctions");
         assert!(output.contains('┤') || output.contains('┐'), "Should have right junctions");
+        assert!(output.contains("│"), "Should have vertical borders");
+        assert!(output.contains("Offered"), "Should contain cell content");
     }
 }
