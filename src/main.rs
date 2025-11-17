@@ -410,6 +410,10 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
     let summary = report::summarize_offered_rows(&all_rows);
     report::print_summary(&summary);
 
+    // Print comparison table
+    let comparison_stats = report::generate_comparison_table(&all_rows);
+    report::print_comparison_table(&comparison_stats);
+
     // Generate markdown report
     let markdown_path = PathBuf::from("copter-report.md");
     match report::export_markdown_table_report(&all_rows, &markdown_path, &config.crate_name, &config.display_version(), total) {

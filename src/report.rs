@@ -619,6 +619,246 @@ pub fn format_summary(summary: &TestSummary) -> String {
 pub fn print_summary(summary: &TestSummary) {
     print!("{}", format_summary(summary));
 }
+/// Statistics for comparison table
+#[derive(Debug, Clone)]
+pub struct ComparisonStats {
+    pub version_label: String,  // "Default" or version number
+    pub total_tested: usize,
+    pub already_broken: Option<usize>,  // Only for baseline
+    pub passed_fetch: usize,
+    pub passed_check: usize,
+    pub passed_test: usize,
+    pub fully_passing: usize,
+    pub regressions: Vec<String>,  // List of "dependent:version" that regressed
+}
+
+/// Generate comparison table statistics
+pub fn generate_comparison_table(rows: &[OfferedRow]) -> Vec<ComparisonStats> {
+    use std::collections::{HashMap, HashSet};
+
+    // First, collect baseline stats
+    let baseline_rows: Vec<&OfferedRow> = rows.iter()
+        .filter(|r| r.offered.is_none())
+        .collect();
+
+    let mut baseline_stats = ComparisonStats {
+        version_label: "Default".to_string(),
+        total_tested: 0,
+        already_broken: Some(0),
+        passed_fetch: 0,
+        passed_check: 0,
+        passed_test: 0,
+        fully_passing: 0,
+        regressions: vec![],
+    };
+
+    let mut seen_baseline: HashSet<String> = HashSet::new();
+    for row in &baseline_rows {
+        let dep_name = &row.primary.dependent_name;
+        if !seen_baseline.insert(dep_name.clone()) {
+            continue;
+        }
+
+        baseline_stats.total_tested += 1;
+
+        let passed_fetch = row.test.commands.iter()
+            .filter(|cmd| cmd.command == CommandType::Fetch)
+            .all(|cmd| cmd.result.passed);
+
+        let passed_check = row.test.commands.iter()
+            .filter(|cmd| cmd.command == CommandType::Check || cmd.command == CommandType::Fetch)
+            .all(|cmd| cmd.result.passed);
+
+        let passed_test = row.test.commands.iter()
+            .all(|cmd| cmd.result.passed);
+
+        if !passed_check {
+            baseline_stats.already_broken = Some(baseline_stats.already_broken.unwrap() + 1);
+        } else {
+            if passed_fetch {
+                baseline_stats.passed_fetch += 1;
+            }
+            if passed_check {
+                baseline_stats.passed_check += 1;
+            }
+            if passed_test {
+                baseline_stats.passed_test += 1;
+                baseline_stats.fully_passing += 1;
+            }
+        }
+    }
+
+    let mut all_stats = vec![baseline_stats];
+
+    // Group offered rows by version
+    let mut by_version: HashMap<String, Vec<&OfferedRow>> = HashMap::new();
+    for row in rows {
+        if let Some(ref offered) = row.offered {
+            by_version.entry(offered.version.clone())
+                .or_insert_with(Vec::new)
+                .push(row);
+        }
+    }
+
+    // Sort versions (simple string sort for now)
+    let mut versions: Vec<String> = by_version.keys().cloned().collect();
+    versions.sort();
+
+    for version in versions {
+        let version_rows = &by_version[&version];
+
+        let mut stats = ComparisonStats {
+            version_label: version.clone(),
+            total_tested: 0,
+            already_broken: None,  // Don't show for offered versions
+            passed_fetch: 0,
+            passed_check: 0,
+            passed_test: 0,
+            fully_passing: 0,
+            regressions: vec![],
+        };
+
+        let mut seen: HashSet<String> = HashSet::new();
+        for row in version_rows {
+            let dep_name = &row.primary.dependent_name;
+            if !seen.insert(dep_name.clone()) {
+                continue;
+            }
+
+            stats.total_tested += 1;
+
+            let passed_fetch = row.test.commands.iter()
+                .filter(|cmd| cmd.command == CommandType::Fetch)
+                .all(|cmd| cmd.result.passed);
+
+            let passed_check = row.test.commands.iter()
+                .filter(|cmd| cmd.command == CommandType::Check || cmd.command == CommandType::Fetch)
+                .all(|cmd| cmd.result.passed);
+
+            let passed_test = row.test.commands.iter()
+                .all(|cmd| cmd.result.passed);
+
+            // Only count if not already broken in baseline
+            let baseline_row = baseline_rows.iter()
+                .find(|br| br.primary.dependent_name == *dep_name);
+
+            let baseline_passed_check = baseline_row.map(|br| {
+                br.test.commands.iter()
+                    .filter(|cmd| cmd.command == CommandType::Check || cmd.command == CommandType::Fetch)
+                    .all(|cmd| cmd.result.passed)
+            }).unwrap_or(false);
+
+            let baseline_passed_test = baseline_row.map(|br| {
+                br.test.commands.iter().all(|cmd| cmd.result.passed)
+            }).unwrap_or(false);
+
+            if baseline_passed_check {
+                // Only count working dependents
+                if passed_fetch {
+                    stats.passed_fetch += 1;
+                }
+                if passed_check {
+                    stats.passed_check += 1;
+                }
+                if passed_test {
+                    stats.passed_test += 1;
+                    stats.fully_passing += 1;
+                }
+
+                // Track regressions: baseline passed but offered failed
+                if baseline_passed_test && !passed_test {
+                    let baseline_version = baseline_row
+                        .map(|br| br.primary.resolved_version.as_str())
+                        .unwrap_or("?");
+                    stats.regressions.push(format!("{} ({})", dep_name, baseline_version));
+                }
+            }
+        }
+
+        all_stats.push(stats);
+    }
+
+    all_stats
+}
+
+/// Print comparison table
+pub fn print_comparison_table(stats_list: &[ComparisonStats]) {
+    if stats_list.is_empty() {
+        return;
+    }
+
+    println!("\nVersion Comparison:");
+
+    // Print header
+    print!("{:<26}", "");
+    for stats in stats_list {
+        print!("{:>16}", stats.version_label);
+    }
+    println!();
+    println!("{}", "━".repeat(26 + stats_list.len() * 16));
+
+    // Helper to print a row with baseline value only
+    let print_simple = |label: &str, get_val: fn(&ComparisonStats) -> usize| {
+        print!("{:<26}", label);
+        for stats in stats_list {
+            print!("{:>16}", get_val(stats));
+        }
+        println!();
+    };
+
+    // Helper to print a row with deltas
+    let print_delta = |label: &str, get_val: fn(&ComparisonStats) -> usize| {
+        print!("{:<26}", label);
+        for (i, stats) in stats_list.iter().enumerate() {
+            let val = get_val(stats);
+            if i == 0 {
+                print!("{:>16}", val);
+            } else {
+                let prev = get_val(&stats_list[i - 1]);
+                let fixed = if val > prev { val - prev } else { 0 };
+                let regressed = if val < prev { prev - val } else { 0 };
+                let delta_str = match (fixed, regressed) {
+                    (0, 0) => format!("{}", val),
+                    (f, 0) => format!("+{} → {}", f, val),
+                    (0, r) => format!("-{} → {}", r, val),
+                    (f, r) => format!("+{} -{} → {}", f, r, val),
+                };
+                print!("{:>16}", delta_str);
+            }
+        }
+        println!();
+    };
+
+    print_simple("Total tested", |s| s.total_tested);
+
+    // Already broken (special case - shows "-" for non-baseline)
+    print!("{:<26}", "Already broken");
+    for stats in stats_list {
+        print!("{:>16}", stats.already_broken.map_or("-".to_string(), |c| c.to_string()));
+    }
+    println!();
+
+    println!("{}", "━".repeat(26 + stats_list.len() * 16));
+
+    print_delta("Passed fetch", |s| s.passed_fetch);
+    print_delta("Passed check", |s| s.passed_check);
+    print_delta("Passed test", |s| s.passed_test);
+
+    println!("{}", "━".repeat(26 + stats_list.len() * 16));
+
+    print_delta("Fully passing", |s| s.fully_passing);
+    println!();
+
+    // Print regression details for each version that has regressions
+    for stats in stats_list.iter().skip(1) {  // Skip baseline
+        if !stats.regressions.is_empty() {
+            println!("\n  {} regressions:", stats.version_label);
+            for regressed in &stats.regressions {
+                println!("    - {}", regressed);
+            }
+        }
+    }
+}
 
 //
 // HTML and Markdown report generation (simplified)

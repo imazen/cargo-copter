@@ -23,7 +23,7 @@ cargo test
 - `src/cli.rs` - Argument parsing (clap), supports space-delimited values
 - `src/api.rs` - crates.io API (paginated, 100/page)
 - `src/compile.rs` - Three-step ICT (Install/Check/Test) logic
-- `src/report.rs` - Five-column console table, error deduplication, HTML/markdown generation
+- `src/report.rs` - Five-column console table, error deduplication, detailed version statistics, HTML/markdown generation
 - `src/error_extract.rs` - JSON diagnostic parsing with configurable line limits
 
 ## Core Data Structures
@@ -78,6 +78,52 @@ Five columns: **Offered | Spec | Resolved | Dependent | Result**
 - **Separators**: Full horizontal line between different dependents
 
 See **[CONSOLE-FORMAT.md](CONSOLE-FORMAT.md)** for complete specification with 9 demo scenarios.
+
+## Detailed Version Statistics
+
+After the table, a detailed breakdown shows per-version impact:
+
+```
+Version: 0.8.52 (offered)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Total dependents tested:           50
+
+  Baseline state:
+    ✗ Already broken                  5  (10%)
+      - mycrate-broken 1.0
+      - another-crate 2.1
+    ────────────────────────────────────────────────────────
+    ✓ Working dependents             45  (90%)
+      ├─ Passed check only            5  (11%)
+      └─ Passed all tests            40  (89%)
+
+  With offered version (0.8.52):
+    Regressions from baseline:
+      ✗ New fetch failures             1
+        - mycrate 1.0 (0.8.50 → 0.8.52)
+      ✗ New check failures             7
+        - serde-helper 2.0 (0.8.50 → 0.8.52)
+        - image-proc 1.5 (0.8.48 → 0.8.52)
+        ...
+      ✗ New test failures              7
+        - integration-test 3.0 (0.8.50 → 0.8.52)
+        ...
+    ────────────────────────────────────────────────────────
+    Total regressions:              15 crates (33%)
+    ✓ Still passing:                30 crates (67%)
+
+  Fixed from baseline:
+    ✓ Previously broken, now working   2
+      - fixed-crate 1.0 (0.8.50 ✗ → 0.8.52 ✓)
+```
+
+**Key features:**
+- **Baseline context**: Shows already-broken crates (not your fault)
+- **Unique count**: Each dependent counted once, even if fails multiple steps
+- **Version arrows**: Shows dependency version transitions (0.8.50 → 0.8.52)
+- **Step granularity**: Tracks where regressions occurred (fetch/check/test)
+- **Fixes tracked**: Shows crates that were broken but now work
+- **Limited lists**: Shows first 5 crates, then "... and N more"
 
 ## Caching
 
