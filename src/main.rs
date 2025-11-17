@@ -11,7 +11,7 @@
 mod api;
 mod cli;
 mod compile;
-mod console_tables;
+mod console_format;
 mod error_extract;
 mod metadata;
 mod report;
@@ -495,12 +495,31 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
         &config.crate_name,
         &config.display_version(),
         total,
+        Some(&test_plan),
+        this_path.as_deref(),
     ) {
         Ok(_) => {
             println!("Markdown report: {}", markdown_path.display());
         }
         Err(e) => {
             eprintln!("Warning: Failed to generate markdown report: {}", e);
+        }
+    }
+
+    // Generate JSON report
+    let json_path = PathBuf::from("copter-report.json");
+    match report::export_json_report(
+        &all_rows,
+        &json_path,
+        &config.crate_name,
+        &config.display_version(),
+        total,
+    ) {
+        Ok(_) => {
+            println!("JSON report: {}", json_path.display());
+        }
+        Err(e) => {
+            eprintln!("Warning: Failed to generate JSON report: {}", e);
         }
     }
 
@@ -799,7 +818,7 @@ pub enum VersionStatus {
 // ============================================================================
 
 /// A single row in the five-column console table output
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OfferedRow {
     /// Baseline test result: None = this IS baseline, Some(bool) = baseline exists and passed/failed
     pub baseline_passed: Option<bool>,
@@ -818,7 +837,7 @@ pub struct OfferedRow {
 }
 
 /// Reference to a dependency (primary or transitive)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DependencyRef {
     pub dependent_name: String,         // "image"
     pub dependent_version: String,      // "0.25.8"
@@ -829,20 +848,20 @@ pub struct DependencyRef {
 }
 
 /// Version offered for testing
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OfferedVersion {
     pub version: String, // "this(0.8.91)" or "0.8.51"
     pub forced: bool,    // true shows [≠→!] suffix
 }
 
 /// Test execution (Install/Check/Test)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TestExecution {
     pub commands: Vec<TestCommand>, // fetch, check, test
 }
 
 /// A single test command (fetch, check, or test)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TestCommand {
     pub command: CommandType,
     pub features: Vec<String>,
@@ -850,7 +869,7 @@ pub struct TestCommand {
 }
 
 /// Type of command executed
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CommandType {
     Fetch,
     Check,
@@ -858,7 +877,7 @@ pub enum CommandType {
 }
 
 /// Result of executing a command
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CommandResult {
     pub passed: bool,
     pub duration: f64,
@@ -866,21 +885,21 @@ pub struct CommandResult {
 }
 
 /// A crate that failed during testing
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CrateFailure {
     pub crate_name: String,
     pub error_message: String,
 }
 
 /// Transitive dependency test (depth > 0)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TransitiveTest {
     pub dependency: DependencyRef,
     pub depth: usize,
 }
 
 /// Source of a version (crates.io, local, or git)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum VersionSource {
     CratesIo,
     Local,
@@ -2007,6 +2026,10 @@ impl StdError for Error {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "data_structures_test.rs"]
+mod data_structures_test;
 
 #[cfg(test)]
 mod tests {

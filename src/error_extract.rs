@@ -235,7 +235,7 @@ mod tests {
                 level: DiagnosticLevel::Error,
                 code: Some("E0425".to_string()),
                 message: "cannot find value `foo`".to_string(),
-                rendered: "full error text".to_string(),
+                rendered: "error[E0425]: cannot find value `foo` in this scope\n --> src/main.rs:10:5".to_string(),
                 primary_span: Some(SpanInfo {
                     file_name: "src/main.rs".to_string(),
                     line: 10,
@@ -247,13 +247,14 @@ mod tests {
                 level: DiagnosticLevel::Warning,
                 code: None,
                 message: "unused variable".to_string(),
-                rendered: "warning text".to_string(),
+                rendered: "warning: unused variable".to_string(),
                 primary_span: None,
             },
         ];
 
         let summary = extract_error_summary(&diagnostics, 0);
-        assert!(summary.contains("full error text"));
+        // extract_error_summary only returns the rendered field from errors
+        assert!(summary.contains("error[E0425]"));
         assert!(summary.contains("cannot find value"));
         assert!(summary.contains("src/main.rs:10:5"));
         assert!(!summary.contains("unused variable")); // Warnings excluded
