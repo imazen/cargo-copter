@@ -308,7 +308,7 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: O
 
         if corner0_width > 0 {
             println!("│{:shortened_offered$}┌{:─<corner0$}┴{:─<corner1$}┘{:padding$}└{:─<corner2$}┘{:w_result$}│",
-                     "", "", "", "", "",
+                     "", "", "", "", "", "",
                      shortened_offered = shortened_offered, corner0 = corner0_width, corner1 = corner1_width,
                      padding = padding_width, corner2 = corner2_width, w_result = w.result);
         } else {
@@ -327,7 +327,7 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: O
         if !is_last_in_group {
             if corner0_width > 0 {
                 println!("│{:shortened_offered$}└{:─<corner0$}┬{:─<corner1$}┬{:─<corner2$}┬{:─<corner3$}┬{:─<corner4$}┤",
-                         "", "", "", "", "",
+                         "", "", "", "", "", "",
                          shortened_offered = shortened_offered, corner0 = corner0_width, corner1 = w.spec, corner2 = w.resolved,
                          corner3 = w.dependent, corner4 = w.result);
             } else {
