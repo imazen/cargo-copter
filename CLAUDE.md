@@ -182,7 +182,5 @@ cargo-copter --error-lines 0 --top-dependents 5
 ## Potential Improvements
 
 Ideas for future enhancements:
-- Extract original_requirement from dependent's Cargo.toml for more accurate Spec column
+- Extract original_requirement from dependent's Cargo.toml for more accurate Spec column (currently shows "*")
 - Detect multi-version cargo tree scenarios (transitive dependencies)
-- Live crates.io integration tests for CI/CD
-- Parallel testing with configurable job count
