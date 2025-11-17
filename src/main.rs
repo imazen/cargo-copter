@@ -384,9 +384,15 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
 
         // Convert to OfferedRows and stream print
         let rows = result.to_offered_rows(config.error_lines);
+        let mut prev_error: Option<String> = None;
         for (j, row) in rows.iter().enumerate() {
             let is_last_in_group = j == rows.len() - 1;
-            report::print_offered_row(row, is_last_in_group);
+
+            // Pass previous error for deduplication
+            report::print_offered_row(row, is_last_in_group, prev_error.as_deref());
+
+            // Update prev_error for next iteration (within same dependent)
+            prev_error = report::extract_error_text(row);
         }
 
         // Print separator after each dependent

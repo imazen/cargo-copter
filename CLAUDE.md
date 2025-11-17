@@ -19,12 +19,12 @@ cargo test
 
 ## Key Files
 
-- `src/main.rs` - Orchestration, multi-version testing flow
+- `src/main.rs` - Orchestration, multi-version testing flow, error deduplication
 - `src/cli.rs` - Argument parsing (clap), supports space-delimited values
 - `src/api.rs` - crates.io API (paginated, 100/page)
 - `src/compile.rs` - Three-step ICT (Install/Check/Test) logic
-- `src/report.rs` - Five-column console table, HTML/markdown generation
-- `src/error_extract.rs` - JSON diagnostic parsing
+- `src/report.rs` - Five-column console table, error deduplication, HTML/markdown generation
+- `src/error_extract.rs` - JSON diagnostic parsing with configurable line limits
 
 ## Core Data Structures
 
@@ -73,6 +73,7 @@ Five columns: **Offered | Spec | Resolved | Dependent | Result**
 - Icons: ✓ (tested pass), ✗ (tested fail), ⊘ (skipped), - (baseline)
 - Resolution: = (exact), ↑ (upgraded), ≠ (mismatch/forced)
 - **Error lines**: Span columns 2-5, borders on 2 & 4 only
+- **Error deduplication**: Repeated errors show `[SAME ERROR]` instead of full text
 - **Multi-version rows**: Use `├─` prefixes in columns 2-4
 - **Separators**: Full horizontal line between different dependents
 

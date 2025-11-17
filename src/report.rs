@@ -242,10 +242,31 @@ pub fn print_table_footer() {
     print!("{}", format_table_footer());
 }
 
-/// Print an OfferedRow using the standard table format
-pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool) {
-    // Convert OfferedRow to formatted data
+/// Extract error text from an OfferedRow for deduplication
+pub fn extract_error_text(row: &OfferedRow) -> Option<String> {
     let formatted = format_offered_row(row);
+    if formatted.error_details.is_empty() {
+        None
+    } else {
+        Some(formatted.error_details.join("\n"))
+    }
+}
+
+/// Print an OfferedRow using the standard table format
+pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: Option<&str>) {
+    // Convert OfferedRow to formatted data
+    let mut formatted = format_offered_row(row);
+
+    // Check if this error is the same as the previous one
+    if let Some(prev) = prev_error {
+        if !formatted.error_details.is_empty() {
+            let current_error = formatted.error_details.join("\n");
+            if current_error == prev {
+                // Replace with "[SAME ERROR]" marker
+                formatted.error_details = vec!["[SAME ERROR]".to_string()];
+            }
+        }
+    }
 
     // Use dynamic widths
     let w = &*WIDTHS;
