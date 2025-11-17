@@ -189,8 +189,8 @@ impl TableWidths {
             max_width = max_width.max(width);
         }
 
-        // Add padding for proper spacing
-        max_width + 2
+        // Add padding for comfortable spacing (4 chars total breathing room)
+        max_width + 4
     }
 }
 
