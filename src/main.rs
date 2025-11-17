@@ -146,14 +146,14 @@ fn parse_dependent_spec(spec: &str) -> (String, Option<String>) {
     }
 }
 
-/// Print a compact test plan showing what will be tested
-fn print_test_plan(
+/// Generate a compact test plan showing what will be tested
+fn format_test_plan(
     rev_deps: &[(String, Option<String>)],
     versions: &[compile::VersionSource],
     force_versions: &[String],
     force_local: bool,
-    _config: &Config,
-) {
+    crate_name: &str,
+) -> String {
     // Format dependents list
     let deps_display: Vec<String> = rev_deps
         .iter()
@@ -184,37 +184,45 @@ fn print_test_plan(
         }
     }
 
-    // Print compact plan
-    println!("\nTest Plan:");
-    println!("  {} × {} = {} tests", rev_deps.len(), versions_display.len(), rev_deps.len() * versions_display.len());
+    // Build compact plan string
+    let mut output = String::new();
 
-    // Show dependents (compact, comma-separated, max 80 chars per line)
-    print!("  Dependents: ");
+    // Show dependents (compact, comma-separated, max 70 chars per line)
     let deps_str = deps_display.join(", ");
     if deps_str.len() <= 70 {
-        println!("{}", deps_str);
+        output.push_str(&format!("  Dependents: {}\n", deps_str));
     } else {
         // Wrap at reasonable points
+        output.push_str("  Dependents: ");
         let mut line = String::new();
         for (i, dep) in deps_display.iter().enumerate() {
             if i > 0 {
                 line.push_str(", ");
             }
             if line.len() + dep.len() > 70 && !line.is_empty() {
-                println!("{}", line);
-                print!("              ");
+                output.push_str(&format!("{}\n", line));
+                output.push_str("              ");
                 line.clear();
             }
             line.push_str(dep);
         }
         if !line.is_empty() {
-            println!("{}", line);
+            output.push_str(&format!("{}\n", line));
         }
     }
 
-    // Show versions (compact, comma-separated)
-    println!("  Versions: {}", versions_display.join(", "));
-    println!();
+    // Show versions (compact, comma-separated) with actual crate name
+    output.push_str(&format!("  {} versions: {}\n", crate_name, versions_display.join(", ")));
+
+    // Show test count
+    output.push_str(&format!(
+        "  {} × {} = {} tests",
+        rev_deps.len(),
+        versions_display.len(),
+        rev_deps.len() * versions_display.len()
+    ));
+
+    output
 }
 
 fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
@@ -411,16 +419,22 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
         versions
     });
 
-    // Print test plan
-    print_test_plan(&rev_deps, &versions_to_test, &config.force_versions, force_local, &config);
+    // Generate test plan string
+    let test_plan = format_test_plan(&rev_deps, &versions_to_test, &config.force_versions, force_local, &config.crate_name);
 
     // Initialize table widths based on versions being tested
     let version_strings: Vec<String> = versions_to_test.iter().map(|v| v.label()).collect();
     report::init_table_widths(&version_strings, &config.display_version(), !config.force_versions.is_empty());
 
-    // Print table header for streaming output
+    // Get path for "this" definition (if local source)
+    let this_path = match &config.next_override {
+        CrateOverride::Source(path) => Some(path.display().to_string()),
+        _ => None,
+    };
+
+    // Print table header for streaming output with embedded test plan
     let total = rev_deps.len();
-    report::print_table_header(&config.crate_name, &config.display_version(), total);
+    report::print_table_header(&config.crate_name, &config.display_version(), total, Some(&test_plan), this_path.as_deref());
 
     // Run tests serially and collect results
     let mut all_rows = Vec::new();

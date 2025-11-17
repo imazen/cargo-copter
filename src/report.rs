@@ -257,15 +257,36 @@ fn format_5col_row_string(offered: &str, spec: &str, resolved: &str, dependent: 
 
 /// Print table header
 /// Format table header as a string
-pub fn format_table_header(crate_name: &str, display_version: &str, total_deps: usize) -> String {
+pub fn format_table_header(
+    crate_name: &str,
+    display_version: &str,
+    total_deps: usize,
+    test_plan: Option<&str>,
+    this_path: Option<&str>,
+) -> String {
     let term_width = get_terminal_width();
     let w = get_widths();
 
     let mut output = String::new();
-    output.push_str(&format!("\n{}\n", "=".repeat(term_width)));
+    output.push('\n');
+
+    // Show "Testing X dependencies" first
     output.push_str(&format!("Testing {} reverse dependencies of {}\n", total_deps, crate_name));
-    output.push_str(&format!("  this = {} (your work-in-progress version)\n", display_version));
-    output.push_str(&format!("{}\n", "=".repeat(term_width)));
+
+    // Include test plan if provided (dependents and versions lines)
+    if let Some(plan) = test_plan {
+        output.push_str(plan);
+        output.push('\n');
+    }
+
+    // Format "this =" line with optional path
+    let this_line = if let Some(path) = this_path {
+        format!("  this = {} ({})", display_version, path)
+    } else {
+        format!("  this = {} (your work-in-progress version)", display_version)
+    };
+    output.push_str(&format!("{}\n", this_line));
+
     output.push('\n');
 
     output.push_str(&format!(
@@ -311,8 +332,14 @@ pub fn format_table_header(crate_name: &str, display_version: &str, total_deps: 
     output
 }
 
-pub fn print_table_header(crate_name: &str, display_version: &str, total_deps: usize) {
-    print!("{}", format_table_header(crate_name, display_version, total_deps));
+pub fn print_table_header(
+    crate_name: &str,
+    display_version: &str,
+    total_deps: usize,
+    test_plan: Option<&str>,
+    this_path: Option<&str>,
+) {
+    print!("{}", format_table_header(crate_name, display_version, total_deps, test_plan, this_path));
 }
 
 /// Print separator line between dependents
@@ -1181,8 +1208,8 @@ pub fn export_markdown_table_report(
     writeln!(file, "## Test Results\n")?;
     writeln!(file, "```")?;
 
-    // Write table header
-    write!(file, "{}", format_table_header(crate_name, display_version, total_deps))?;
+    // Write table header (without test plan for HTML output)
+    write!(file, "{}", format_table_header(crate_name, display_version, total_deps, None, None))?;
 
     // Write all rows
     for row in rows.iter() {
