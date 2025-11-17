@@ -562,15 +562,29 @@ fn format_offered_row(row: &OfferedRow) -> FormattedRow {
         false
     };
 
+    // Detect if this is a baseline row (no offered version)
+    let is_baseline = row.offered.is_none();
+
     let result_status = if not_used {
         "not used".to_string()
+    } else if is_baseline {
+        // Baseline row: if it failed, show "build broken" or "test broken"
+        if overall_passed {
+            "passed".to_string()
+        } else if let Some(step) = failed_step {
+            // Replace "failed" with "broken" for baseline failures
+            step.replace("failed", "broken")
+        } else {
+            "broken".to_string()
+        }
     } else {
+        // Offered row: compare against baseline
         match (row.baseline_passed, overall_passed, failed_step) {
             (Some(true), true, _) => "passed".to_string(),
             (Some(true), false, Some(step)) => step.to_string(),
             (Some(true), false, None) => "regressed".to_string(),
-            // For broken baselines, show the specific failure type
-            (Some(false), _, Some(step)) => format!("{} (broken)", step),
+            // For offered rows when baseline was broken
+            (Some(false), _, Some(step)) => step.replace("failed", "broken"),
             (Some(false), _, None) => "broken".to_string(),
             (None, true, _) => "passed".to_string(),
             (None, false, Some(step)) => step.to_string(),
@@ -603,11 +617,13 @@ fn format_offered_row(row: &OfferedRow) -> FormattedRow {
     // Determine color
     let color = if not_used {
         term::color::YELLOW  // Brown/yellow for skipped (not used) versions
+    } else if is_baseline && !overall_passed {
+        term::color::BRIGHT_YELLOW  // Yellow for failed baseline rows
     } else {
         match (row.baseline_passed, overall_passed) {
             (Some(true), true) => term::color::BRIGHT_GREEN,
             (Some(true), false) => term::color::BRIGHT_RED,
-            (Some(false), _) => term::color::BRIGHT_YELLOW,  // Yellow for broken baselines
+            (Some(false), _) => term::color::BRIGHT_YELLOW,  // Yellow for broken (baseline was broken)
             (None, true) => term::color::BRIGHT_GREEN,
             (None, false) => term::color::BRIGHT_RED,
         }
@@ -810,19 +826,20 @@ pub fn generate_comparison_table(rows: &[OfferedRow]) -> Vec<ComparisonStats> {
         let passed_test = row.test.commands.iter()
             .all(|cmd| cmd.result.passed);
 
-        if !passed_check {
+        // Only count as "already broken" if TEST failed (not build/check failures)
+        if passed_check && !passed_test {
             baseline_stats.already_broken = Some(baseline_stats.already_broken.unwrap() + 1);
-        } else {
-            if passed_fetch {
-                baseline_stats.passed_fetch += 1;
-            }
-            if passed_check {
-                baseline_stats.passed_check += 1;
-            }
-            if passed_test {
-                baseline_stats.passed_test += 1;
-                baseline_stats.fully_passing += 1;
-            }
+        }
+
+        if passed_fetch {
+            baseline_stats.passed_fetch += 1;
+        }
+        if passed_check {
+            baseline_stats.passed_check += 1;
+        }
+        if passed_test {
+            baseline_stats.passed_test += 1;
+            baseline_stats.fully_passing += 1;
         }
     }
 
