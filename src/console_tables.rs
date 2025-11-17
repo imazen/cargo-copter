@@ -74,6 +74,64 @@ impl ColSize {
     }
 }
 
+/// Stateful table formatter for streaming output with proper box-drawing separators
+///
+/// Tracks the previous row's column layout to generate correct separators between rows.
+/// Output accumulates in a String that can be printed or written to markdown.
+pub struct TableFormatter {
+    previous_layout: Option<Vec<ColSize>>,
+    output: String,
+}
+
+impl TableFormatter {
+    /// Create a new table formatter
+    pub fn new() -> Self {
+        Self {
+            previous_layout: None,
+            output: String::new(),
+        }
+    }
+
+    /// Add a row to the table
+    ///
+    /// Automatically generates the separator from the previous row (if any).
+    ///
+    /// # Arguments
+    /// * `row_content` - Pre-formatted row string (e.g., "│ cell1 │ cell2 │")
+    /// * `current_layout` - Column layout for this row
+    pub fn add_row(&mut self, row_content: &str, current_layout: &[ColSize]) {
+        // Generate separator from previous row (if any)
+        if let Some(ref prev_layout) = self.previous_layout {
+            let separator = format_separator_row(prev_layout, current_layout);
+            self.output.push_str(&separator);
+            self.output.push('\n');
+        }
+
+        // Add the row content
+        self.output.push_str(row_content);
+        self.output.push('\n');
+
+        // Store current layout for next separator
+        self.previous_layout = Some(current_layout.to_vec());
+    }
+
+    /// Get the accumulated output
+    pub fn get_output(&self) -> &str {
+        &self.output
+    }
+
+    /// Consume the formatter and return the output
+    pub fn finish(self) -> String {
+        self.output
+    }
+
+    /// Clear accumulated output and reset state (for reuse)
+    pub fn reset(&mut self) {
+        self.output.clear();
+        self.previous_layout = None;
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ResolvedColSize {
     pub width: usize,
@@ -529,5 +587,44 @@ mod tests {
         for (i, (gen, exp)) in generated_lines.iter().zip(expected_lines.iter()).enumerate() {
             assert_eq!(gen, exp, "Line {} differs", i + 1);
         }
+    }
+
+    #[test]
+    fn test_table_formatter_streaming() {
+        // Demonstrate streaming table formatter usage
+        let mut formatter = TableFormatter::new();
+
+        // Row 1: Regular 5-column table row
+        let layout1 = vec![
+            ColSize::new(10, true),  // Offered column
+            ColSize::new(12, true),  // Spec column
+            ColSize::new(18, true),  // Resolved column
+            ColSize::new(35, true),  // Dependent column
+            ColSize::new(25, true),  // Result column
+        ];
+        formatter.add_row("│  Offered  │    Spec    │     Resolved     │            Dependent              │   Result         Time   │", &layout1);
+
+        // Row 2: Same layout (will generate separator above)
+        formatter.add_row("│ - baseline│ 0.8        │ 0.8.52 📦        │ my-crate 1.0.0                    │   passed ✓✓✓  0.5s      │", &layout1);
+
+        // Row 3: Error row spanning columns 2-5
+        let layout_error = vec![
+            ColSize::new(10, false), // Offered (no separator)
+            ColSize::new(90, true),  // Merged columns 2-5 (with separator)
+        ];
+        formatter.add_row("│          │ Error: cargo test failed                                                          │", &layout_error);
+
+        // Row 4: Back to regular layout
+        formatter.add_row("│ ✓ =0.8.52 │ 0.8        │ 0.8.52 📦        │ my-crate 1.0.0                    │   passed ✓✓✓  0.5s      │", &layout1);
+
+        let output = formatter.finish();
+
+        println!("\nGenerated table:");
+        println!("{}", output);
+
+        // Verify we have separators
+        assert!(output.contains('─'), "Should have horizontal lines");
+        assert!(output.contains('├') || output.contains('┌'), "Should have left junctions");
+        assert!(output.contains('┤') || output.contains('┐'), "Should have right junctions");
     }
 }
