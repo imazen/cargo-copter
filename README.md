@@ -100,8 +100,8 @@ cargo-copter --clean --top-dependents 5
     --force-versions <VER>...  Force versions (bypass semver)
     --staging-dir <PATH>       Cache directory [default: .copter/staging]
     --output <PATH>            HTML report [default: copter-report.html]
-    --no-check                 Skip cargo check
-    --no-test                  Skip cargo test
+    --only-fetch               Only fetch dependencies (skip check and test)
+    --only-check               Only fetch and check (skip tests)
     --clean                    Clean cache before testing
     --error-lines <N>          Error lines to show [default: 10]
     --skip-normal-testing      Skip auto-patch mode for forced versions
