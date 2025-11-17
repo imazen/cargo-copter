@@ -10,6 +10,7 @@ use crate::{OfferedRow, CommandType, VersionSource};
 use term::color::Color;
 use unicode_width::{UnicodeWidthStr, UnicodeWidthChar};
 use terminal_size::{Width, terminal_size};
+use crate::console_tables::{ColSize, TableFormatter};
 
 //
 // Rendering Model Types
@@ -215,6 +216,57 @@ pub fn init_table_widths(versions: &[String], display_version: &str, force_versi
 /// Get table widths (with fallback to defaults if not initialized)
 fn get_widths() -> &'static TableWidths {
     WIDTHS.get_or_init(|| TableWidths::new(get_terminal_width()))
+}
+
+//
+// Column layout helpers for TableFormatter
+//
+
+/// Create standard 5-column layout (all columns want separators)
+fn standard_5col_layout() -> Vec<ColSize> {
+    let w = get_widths();
+    vec![
+        ColSize::new(w.offered, true),
+        ColSize::new(w.spec, true),
+        ColSize::new(w.resolved, true),
+        ColSize::new(w.dependent, true),
+        ColSize::new(w.result, true),
+    ]
+}
+
+/// Create error row layout (offered column + merged columns 2-5)
+fn error_row_layout() -> Vec<ColSize> {
+    let w = get_widths();
+    vec![
+        ColSize::new(w.offered, false),  // No separator for offered column
+        // Merged columns 2-5: spec + resolved + dependent + result + 3 internal borders
+        ColSize::new(w.spec + w.resolved + w.dependent + w.result + 3, true),
+    ]
+}
+
+/// Create header row layout (same as standard but might have different separator rules)
+fn header_row_layout() -> Vec<ColSize> {
+    standard_5col_layout()
+}
+
+/// Format a standard 5-column row as a string (for TableFormatter)
+fn format_5col_row_string(
+    offered: &str,
+    spec: &str,
+    resolved: &str,
+    dependent: &str,
+    result: &str,
+) -> String {
+    let w = get_widths();
+    let offered_display = truncate_with_padding(offered, w.offered - 2);
+    let spec_display = truncate_with_padding(spec, w.spec - 2);
+    let resolved_display = truncate_with_padding(resolved, w.resolved - 2);
+    let dependent_display = truncate_with_padding(dependent, w.dependent - 2);
+    let result_display = truncate_with_padding(result, w.result - 2);
+
+    format!("│ {} │ {} │ {} │ {} │ {} │",
+            offered_display, spec_display, resolved_display,
+            dependent_display, result_display)
 }
 
 /// Print table header
