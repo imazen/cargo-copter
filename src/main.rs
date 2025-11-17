@@ -244,10 +244,16 @@ fn print_test_plan(
 }
 
 fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
-    // Initialize failure log
+    // Initialize failure log and clear any previous contents
     let log_path = std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("copter-failures.log");
+
+    // Truncate/clear the log file if it exists
+    if log_path.exists() {
+        let _ = std::fs::write(&log_path, "");  // Clear file contents
+    }
+
     compile::init_failure_log(log_path.clone());
     debug!("Failure log initialized at: {:?}", log_path);
 
@@ -264,7 +270,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
 
         // Add specified versions from --test-versions, resolving keywords
         let local_manifest = match &config.next_override {
-            CrateOverride::Source(ref path) => Some(path),
+            CrateOverride::Source(path) => Some(path),
             CrateOverride::Default => None,
         };
 
@@ -520,7 +526,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
             let is_last_in_group = j == rows.len() - 1;
 
             // Pass previous error for deduplication
-            report::print_offered_row(row, is_last_in_group, prev_error.as_deref());
+            report::print_offered_row(row, is_last_in_group, prev_error.as_deref(), config.error_lines);
 
             // Update prev_error for next iteration (within same dependent)
             prev_error = report::extract_error_text(row);
@@ -893,24 +899,14 @@ pub enum VersionSource {
 }
 
 /// Extract error message from diagnostics with stderr fallback
-fn extract_error_with_fallback(diagnostics: &[error_extract::Diagnostic], stderr: &str, max_lines: usize) -> String {
-    let msg = error_extract::extract_error_summary(diagnostics, max_lines);
+fn extract_error_with_fallback(diagnostics: &[error_extract::Diagnostic], stderr: &str, _max_lines: usize) -> String {
+    // Always extract FULL error for storage - truncation happens at display time
+    let msg = error_extract::extract_error_summary(diagnostics, 0);  // 0 = unlimited
     if !msg.is_empty() {
         msg
     } else {
-        // Also limit stderr output
-        if max_lines == 0 {
-            stderr.to_string()
-        } else {
-            let lines: Vec<&str> = stderr.lines().collect();
-            if lines.len() > max_lines {
-                let mut truncated = lines[..max_lines].join("\n");
-                truncated.push_str(&format!("\n... ({} more lines)", lines.len() - max_lines));
-                truncated
-            } else {
-                stderr.to_string()
-            }
-        }
+        // Return full stderr
+        stderr.to_string()
     }
 }
 
@@ -1412,7 +1408,7 @@ fn run_multi_version_test(
 
         // Check if this is the baseline (first version and matches baseline_version)
         let is_baseline = idx == 0 && baseline_version.is_some() && {
-            if let compile::VersionSource::Published { version: ref ver, .. } = version_source {
+            if let compile::VersionSource::Published { version: ver, .. } = version_source {
                 Some(ver.as_str()) == baseline_version.as_deref()
             } else {
                 false
@@ -1526,7 +1522,7 @@ fn run_multi_version_test(
         ) {
             Ok(result) => {
                 // Version mismatch is shown in table with [≠→!] suffix, no need for separate warning
-                if let (Some(ref expected), Some(ref actual)) = (&result.expected_version, &result.actual_version) {
+                if let (Some(expected), Some(actual)) = (&result.expected_version, &result.actual_version) {
                     if actual != expected {
                         debug!("⚠️  VERSION MISMATCH: Expected {} but cargo resolved to {}!", expected, actual);
                     } else {

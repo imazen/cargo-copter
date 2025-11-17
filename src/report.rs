@@ -334,19 +334,91 @@ pub fn print_table_footer() {
     print!("{}", format_table_footer());
 }
 
-/// Extract error text from an OfferedRow for deduplication
-pub fn extract_error_text(row: &OfferedRow) -> Option<String> {
-    // Only extract error text from non-baseline rows that actually failed
-    // Don't track baseline errors for "still failing" comparison
-    if row.offered.is_none() {
-        return None;  // Skip baseline rows
+/// Normalize file paths by removing hex suffixes (e.g., file-abc123 -> file)
+/// Handles both Unix (/) and Windows (\) paths
+fn normalize_path_hex_codes(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut i = 0;
+    let chars: Vec<char> = text.chars().collect();
+
+    while i < chars.len() {
+        result.push(chars[i]);
+
+        // Check if we just pushed a path separator
+        if chars[i] == '/' || chars[i] == '\\' {
+            // Look ahead to find the next path component
+            let mut j = i + 1;
+            let mut component = String::new();
+
+            // Collect characters until next separator, space, or end
+            while j < chars.len() && chars[j] != '/' && chars[j] != '\\' && !chars[j].is_whitespace() {
+                component.push(chars[j]);
+                j += 1;
+            }
+
+            // Check if component ends with -[hex] pattern
+            if let Some(dash_pos) = component.rfind('-') {
+                let potential_hex = &component[dash_pos + 1..];
+                // Check if it's all hex digits and at least 8 chars
+                if potential_hex.len() >= 8 && potential_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                    // Remove the -[hex] suffix
+                    result.push_str(&component[..dash_pos]);
+                    i = j;
+                    continue;
+                }
+            }
+
+            // No hex pattern, add component as-is
+            result.push_str(&component);
+            i = j;
+            continue;
+        }
+
+        i += 1;
     }
 
-    let formatted = format_offered_row(row);
+    result
+}
+
+/// Extract error signature for comparison - normalizes line numbers and sorts errors
+pub fn error_signature(text: &str) -> String {
+    use std::collections::BTreeSet;
+
+    // Extract error codes with their messages
+    let mut errors = BTreeSet::new();
+
+    for line in text.lines() {
+        // Match error lines like "error[E0432]: ..." and normalize
+        if let Some(start) = line.find("error[") {
+            if let Some(end) = line[start..].find("]:") {
+                let code = &line[start..start+end+2];
+                let message = line[start+end+2..].trim();
+                // Remove specific line references to focus on error type
+                let normalized = message
+                    .split("-->").next().unwrap_or(message)
+                    .trim();
+                errors.insert(format!("{} {}", code, normalized));
+            }
+        }
+    }
+
+    // Sort and join all errors
+    errors.into_iter().collect::<Vec<_>>().join("\n")
+}
+
+/// Extract error text from an OfferedRow for deduplication
+pub fn extract_error_text(row: &OfferedRow) -> Option<String> {
+    // Extract errors from ALL rows (including baseline) for comparison
+    // Skipped rows should match baseline since they use the same version
+
+    // Extract FULL error (0 = unlimited) for comparison purposes
+    let formatted = format_offered_row(row, 0);
     if formatted.error_details.is_empty() {
         None
     } else {
-        Some(formatted.error_details.join("\n"))
+        // Use error signature for robust comparison across non-deterministic error ordering
+        let error_text = formatted.error_details.join("\n");
+        Some(error_signature(&error_text))
     }
 }
 
@@ -464,19 +536,35 @@ fn print_multi_version_rows(rows: &[(String, String, String)]) {
 }
 
 /// Print an OfferedRow using the standard table format
-pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: Option<&str>) {
+pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: Option<&str>, max_error_lines: usize) {
     // Convert OfferedRow to formatted data
-    let mut formatted = format_offered_row(row);
+    let mut formatted = format_offered_row(row, max_error_lines);
 
-    // Check if this error is the same as the previous one
-    if let Some(prev) = prev_error {
+    // Don't show "same failure" on baseline rows (they're the reference point)
+    let is_baseline = row.offered.is_none();
+
+    // When errors match exactly, show "same failure" instead of repeating the error
+    // Applies to both regression and broken scenarios, but NOT for baseline rows
+    if !is_baseline && let Some(prev) = prev_error {
         if !formatted.error_details.is_empty() {
-            let current_error = formatted.error_details.join("\n");
-            if current_error == prev {
-                // Clear error details and show "still failing" in result column
+            // Extract FULL error for comparison (not truncated)
+            // prev_error is full, so we need full current error too
+            let full_formatted = format_offered_row(row, 0);
+            let current_error = full_formatted.error_details.join("\n");
+            // Use error signature for robust comparison
+            let current_signature = error_signature(&current_error);
+            if current_signature == prev {
+                // Clear error details and update result to show "same failure"
+                // Keep ICT marks and time
                 formatted.error_details.clear();
-                formatted.result = "still failing".to_string();
-                formatted.time = String::new();
+                // Replace the failure type with "same failure", keeping ICT marks
+                // For broken scenarios, also replace "test broken" -> "same failure"
+                formatted.result = formatted.result
+                    .replace("test failed", "same failure")
+                    .replace("build failed", "same failure")
+                    .replace("fetch failed", "same failure")
+                    .replace("test broken", "same failure")
+                    .replace("build broken", "same failure");
             }
         }
     }
@@ -532,7 +620,7 @@ pub struct FormattedRow {
 }
 
 /// Convert OfferedRow to renderable row data
-fn format_offered_row(row: &OfferedRow) -> FormattedRow {
+fn format_offered_row(row: &OfferedRow, max_error_lines: usize) -> FormattedRow {
     // Format Offered column using type-safe OfferedCell
     let offered_cell = OfferedCell::from_offered_row(row);
     let offered_str = offered_cell.format();
@@ -654,13 +742,25 @@ fn format_offered_row(row: &OfferedRow) -> FormattedRow {
             };
             for failure in &cmd.result.failures {
                 error_details.push(format!("cargo {} failed on {}", cmd_name, failure.crate_name));
-                // Add error message if not empty (already formatted by extract_error_summary)
+                // Add error message if not empty (full error - truncate based on max_error_lines)
                 if !failure.error_message.is_empty() {
                     // Split into lines and display each with bullet
-                    for line in failure.error_message.lines().take(10) {
+                    let lines: Vec<&str> = failure.error_message.lines().collect();
+                    let display_lines = if max_error_lines == 0 {
+                        &lines[..]  // Show all lines
+                    } else {
+                        &lines[..lines.len().min(max_error_lines)]
+                    };
+
+                    for line in display_lines {
                         if !line.trim().is_empty() {
                             error_details.push(format!("  {}", line));
                         }
+                    }
+
+                    // Add truncation indicator if we cut lines
+                    if max_error_lines > 0 && lines.len() > max_error_lines {
+                        error_details.push(format!("  ... ({} more lines)", lines.len() - max_error_lines));
                     }
                 }
             }
@@ -1067,7 +1167,8 @@ pub fn export_markdown_table_report(rows: &[OfferedRow], output_path: &PathBuf, 
 
 /// Format an OfferedRow as a string (similar to print_offered_row but returns String)
 fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String {
-    let formatted = format_offered_row(row);
+    // Use unlimited error lines for markdown export
+    let formatted = format_offered_row(row, 0);
     let w = get_widths();
 
     let mut output = String::new();

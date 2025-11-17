@@ -13,12 +13,17 @@ use lazy_static::lazy_static;
 // Failure log file path
 lazy_static! {
     static ref FAILURE_LOG: Mutex<Option<PathBuf>> = Mutex::new(None);
+    // Track last error signature for deduplication
+    static ref LAST_ERROR_SIGNATURE: Mutex<Option<String>> = Mutex::new(None);
 }
 
 /// Initialize the failure log file
 pub fn init_failure_log(log_path: PathBuf) {
     let mut log = FAILURE_LOG.lock().unwrap();
     *log = Some(log_path);
+    // Clear the error signature when initializing
+    let mut sig = LAST_ERROR_SIGNATURE.lock().unwrap();
+    *sig = None;
 }
 
 /// Log a compilation failure to the failure log file with proper locking
@@ -80,6 +85,25 @@ pub fn log_failure_with_diagnostics(
 
     let exit_str = exit_code.map(|c| c.to_string()).unwrap_or_else(|| "N/A".to_string());
 
+    // Generate error signature for deduplication
+    let current_signature = if !diagnostics.is_empty() {
+        let error_text = diagnostics.iter()
+            .map(|d| d.rendered.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        crate::report::error_signature(&error_text)
+    } else {
+        crate::report::error_signature(stderr)
+    };
+
+    // Check if this error matches the previous one
+    let is_duplicate = {
+        let mut last_sig = LAST_ERROR_SIGNATURE.lock().unwrap();
+        let duplicate = last_sig.as_ref().map(|s| s == &current_signature).unwrap_or(false);
+        *last_sig = Some(current_signature);
+        duplicate
+    };
+
     let _ = writeln!(writer, "\n{}", "=".repeat(100));
     let _ = writeln!(writer, "[{}] FAILURE: {} {} testing {} {}",
                      timestamp, dependent, dependent_version, base_crate, test_label);
@@ -87,8 +111,9 @@ pub fn log_failure_with_diagnostics(
     let _ = writeln!(writer, "Command: {}", command);
     let _ = writeln!(writer, "Exit code: {}", exit_str);
 
-    // If we have parsed diagnostics, show them in a human-readable format
-    if !diagnostics.is_empty() {
+    if is_duplicate {
+        let _ = writeln!(writer, "\n--- SAME FAILURE AS PREVIOUS ---");
+    } else if !diagnostics.is_empty() {
         let _ = writeln!(writer, "\n--- ERRORS ---");
         for (idx, diag) in diagnostics.iter().enumerate() {
             let level_str = match diag.level {

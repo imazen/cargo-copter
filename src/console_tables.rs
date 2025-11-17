@@ -647,8 +647,8 @@ mod tests {
         assert_eq!(generated_lines.len(), expected_lines.len(),
                    "Different number of lines");
 
-        for (i, (gen, exp)) in generated_lines.iter().zip(expected_lines.iter()).enumerate() {
-            assert_eq!(gen, exp, "Line {} differs", i + 1);
+        for (i, (generated, exp)) in generated_lines.iter().zip(expected_lines.iter()).enumerate() {
+            assert_eq!(generated, exp, "Line {} differs", i + 1);
         }
     }
 
