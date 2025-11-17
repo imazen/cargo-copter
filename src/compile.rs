@@ -5,7 +5,7 @@ use std::process::Command;
 use std::env;
 use std::time::{Duration, Instant};
 use std::sync::Mutex;
-use log::debug;
+use log::{debug, warn};
 use crate::error_extract::{Diagnostic, parse_cargo_json};
 use fs2::FileExt;
 use lazy_static::lazy_static;
@@ -853,6 +853,51 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
     }
 
     debug!("extracted {} total version entries for '{}'", all_versions.len(), crate_name);
+
+    // Check for multiple different resolved versions (version mismatch scenario)
+    let unique_versions: std::collections::HashSet<&String> =
+        all_versions.iter().map(|(_, resolved, _)| resolved).collect();
+
+    if unique_versions.len() > 1 {
+        // Multiple versions detected - log the surrounding JSON for debugging
+        warn!("⚠️  Multiple versions of '{}' detected in dependency tree:", crate_name);
+        for (spec, resolved, dependent) in &all_versions {
+            warn!("  {} requires {} → resolved to {} (via {})",
+                  dependent, spec, resolved, crate_name);
+        }
+
+        // Log the relevant JSON nodes to both console and failure log
+        if let Some(resolve) = metadata.get("resolve") {
+            if let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array()) {
+                warn!("Relevant cargo metadata nodes:");
+                for node in nodes {
+                    if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
+                        for dep in deps {
+                            if let Some(name) = dep.get("name").and_then(|n| n.as_str()) {
+                                if name == crate_name {
+                                    // This node depends on our crate - log it
+                                    let node_json = serde_json::to_string_pretty(node)
+                                        .unwrap_or_else(|_| "JSON serialization failed".to_string());
+                                    warn!("Node: {}", node_json);
+
+                                    // Also log to failure log file if initialized
+                                    if let Some(ref log_path) = *FAILURE_LOG.lock().unwrap() {
+                                        if let Ok(mut file) = std::fs::OpenOptions::new()
+                                            .create(true)
+                                            .append(true)
+                                            .open(log_path) {
+                                            let _ = writeln!(file, "\n=== Multi-version detection for '{}' ===", crate_name);
+                                            let _ = writeln!(file, "{}", node_json);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     all_versions
 }
