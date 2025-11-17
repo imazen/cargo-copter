@@ -335,6 +335,111 @@ pub fn extract_error_text(row: &OfferedRow) -> Option<String> {
     }
 }
 
+/// Helper to print error box top border
+fn print_error_box_top(w: &TableWidths) {
+    let shortened_offered = 4;
+    let corner0_width = if shortened_offered != w.offered {
+        w.offered - shortened_offered - 1
+    } else { 0 };
+
+    if corner0_width > 0 {
+        println!("│{:shortened$}┌{:─<c0$}┴{:─<c1$}┘{:padding$}└{:─<c2$}┘{:result$}│",
+                 "", "", "", "", "", "",
+                 shortened = shortened_offered,
+                 c0 = corner0_width,
+                 c1 = w.spec,
+                 padding = w.resolved,
+                 c2 = w.dependent,
+                 result = w.result);
+    } else {
+        println!("│{:offered$}├{:─<spec$}┘{:padding$}└{:─<dep$}┘{:result$}│",
+                "", "", "", "", "",
+                offered = w.offered,
+                spec = w.spec,
+                padding = w.resolved,
+                dep = w.dependent,
+                result = w.result);
+    }
+}
+
+/// Helper to print error box content line
+fn print_error_box_line(line: &str, w: &TableWidths) {
+    let shortened_offered = 4;
+    let error_text_width = w.total - 1 - shortened_offered - 1 - 1 - 1 - 1;
+    let truncated = truncate_with_padding(line, error_text_width);
+    println!("│{:shortened$}│ {} │",
+             "", truncated,
+             shortened = shortened_offered);
+}
+
+/// Helper to print error box bottom border (transitioning back to main table)
+fn print_error_box_bottom(w: &TableWidths) {
+    let shortened_offered = 4;
+    let corner0_width = if shortened_offered != w.offered {
+        w.offered - shortened_offered - 1
+    } else { 0 };
+
+    if corner0_width > 0 {
+        println!("│{:shortened$}└{:─<c0$}┬{:─<c1$}┬{:─<c2$}┬{:─<c3$}┬{:─<c4$}┤",
+                 "", "", "", "", "", "",
+                 shortened = shortened_offered,
+                 c0 = corner0_width,
+                 c1 = w.spec,
+                 c2 = w.resolved,
+                 c3 = w.dependent,
+                 c4 = w.result);
+    } else {
+        println!("│{:offered$}├{:─<spec$}┬{:─<resolved$}┬{:─<dep$}┬{:─<result$}┤",
+                "", "", "", "", "",
+                offered = w.offered,
+                spec = w.spec,
+                resolved = w.resolved,
+                dep = w.dependent,
+                result = w.result);
+    }
+}
+
+/// Print a main 5-column row with proper formatting and color
+fn print_main_row(cells: [&str; 5], color: Color) {
+    let w = get_widths();
+    let displays: Vec<String> = cells.iter().zip([w.offered, w.spec, w.resolved, w.dependent, w.result].iter())
+        .map(|(cell, width)| truncate_with_padding(cell, width - 2))
+        .collect();
+
+    if let Some(ref mut t) = term::stdout() {
+        let _ = t.fg(color);
+        let _ = write!(t, "│ {} │ {} │ {} │ {} │ {} │",
+                      displays[0], displays[1], displays[2], displays[3], displays[4]);
+        let _ = t.reset();
+        println!();
+    } else {
+        println!("│ {} │ {} │ {} │ {} │ {} │",
+                 displays[0], displays[1], displays[2], displays[3], displays[4]);
+    }
+}
+
+/// Print multi-version dependency rows
+fn print_multi_version_rows(rows: &[(String, String, String)]) {
+    if rows.is_empty() { return; }
+
+    let w = get_widths();
+    let last_idx = rows.len() - 1;
+
+    for (i, (spec, resolved, dependent)) in rows.iter().enumerate() {
+        let prefix = if i == last_idx { "└─" } else { "├─" };
+        let spec_display = format!("{} {}", prefix, spec);
+        let spec_display = truncate_with_padding(&spec_display, w.spec - 2);
+        let resolved_display = format!("{} {}", prefix, resolved);
+        let resolved_display = truncate_with_padding(&resolved_display, w.resolved - 2);
+        let dependent_display = format!("{} {}", prefix, dependent);
+        let dependent_display = truncate_with_padding(&dependent_display, w.dependent - 2);
+
+        println!("│{:width$}│ {} │ {} │ {} │{:w_result$}│",
+                 "", spec_display, resolved_display, dependent_display, "",
+                 width = w.offered, w_result = w.result);
+    }
+}
+
 /// Print an OfferedRow using the standard table format
 pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: Option<&str>) {
     // Convert OfferedRow to formatted data
@@ -353,99 +458,37 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: O
         }
     }
 
-    // Use dynamic widths
-    let w = get_widths();
-
-    // Print main row
-    let offered_display = truncate_with_padding(&formatted.offered, w.offered - 2);
-    let spec_display = truncate_with_padding(&formatted.spec, w.spec - 2);
-    let resolved_display = truncate_with_padding(&formatted.resolved, w.resolved - 2);
-    let dependent_display = truncate_with_padding(&formatted.dependent, w.dependent - 2);
+    // Format result column
     let result_display = if formatted.time.is_empty() {
         // "still failing" case - no ICT marks or time
         format!("{:>18}", formatted.result)
     } else {
         format!("{:>12} {:>5}", formatted.result, formatted.time)
     };
-    let result_display = truncate_with_padding(&result_display, w.result - 2);
 
     // Print main row with color
-    if let Some(ref mut t) = term::stdout() {
-        let _ = t.fg(formatted.color);
-        let _ = write!(t, "│ {} │", offered_display);
-        let _ = write!(t, " {} │", spec_display);
-        let _ = write!(t, " {} │", resolved_display);
-        let _ = write!(t, " {} │", dependent_display);
-        let _ = write!(t, " {} │", result_display);
-        let _ = t.reset();
-        println!();
-    } else {
-        println!("│ {} │ {} │ {} │ {} │ {} │",
-                 offered_display, spec_display, resolved_display, dependent_display, result_display);
-    }
+    print_main_row(
+        [&formatted.offered, &formatted.spec, &formatted.resolved,
+         &formatted.dependent, &result_display],
+        formatted.color
+    );
 
-    // Print error details with dropped-panel border (if any)
+    // Print error box if present
     if !formatted.error_details.is_empty() {
-        let corner1_width = w.spec;
-        let corner2_width = w.dependent;
-        let padding_width = w.spec + w.resolved + w.dependent  - corner1_width - corner2_width;
+        let w = get_widths();
+        print_error_box_top(&w);
 
-        let shortened_offered = 4;
-        let corner0_width = if shortened_offered != w.offered {
-            w.offered - shortened_offered -1
-        } else { 0};
-        let error_text_width = w.total - 1 - shortened_offered - 1 - 1 - 1 - 1;
-
-        if corner0_width > 0 {
-            println!("│{:shortened_offered$}┌{:─<corner0$}┴{:─<corner1$}┘{:padding$}└{:─<corner2$}┘{:w_result$}│",
-                     "", "", "", "", "", "",
-                     shortened_offered = shortened_offered, corner0 = corner0_width, corner1 = corner1_width,
-                     padding = padding_width, corner2 = corner2_width, w_result = w.result);
-        } else {
-            println!("│{:w_offered$}├{:─<corner1$}┘{:padding$}└{:─<corner2$}┘{:w_result$}│",
-                    "", "", "", "", "",
-                    w_offered = w.offered, corner1 = corner1_width,
-                    padding = padding_width, corner2 = corner2_width, w_result = w.result);
-        }
         for error_line in &formatted.error_details {
-            let truncated = truncate_with_padding(error_line, error_text_width);
-            println!("│{:shortened_offered$}│ {} │",
-                     "", truncated,
-                     shortened_offered = shortened_offered);
+            print_error_box_line(error_line, &w);
         }
 
         if !is_last_in_group {
-            if corner0_width > 0 {
-                println!("│{:shortened_offered$}└{:─<corner0$}┬{:─<corner1$}┬{:─<corner2$}┬{:─<corner3$}┬{:─<corner4$}┤",
-                         "", "", "", "", "", "",
-                         shortened_offered = shortened_offered, corner0 = corner0_width, corner1 = w.spec, corner2 = w.resolved,
-                         corner3 = w.dependent, corner4 = w.result);
-            } else {
-                println!("│{:w_offered$}├{:─<w_spec$}┬{:─<w_resolved$}┬{:─<w_dependent$}┬{:─<w_result$}┤",
-                        "", "", "", "", "",
-                        w_offered = w.offered, w_spec = w.spec, w_resolved = w.resolved,
-                        w_dependent = w.dependent, w_result = w.result);
-            }
+            print_error_box_bottom(&w);
         }
     }
 
-    // Print multi-version rows with ├─ prefixes (└─ for last row)
-    if !formatted.multi_version_rows.is_empty() {
-        let last_idx = formatted.multi_version_rows.len() - 1;
-        for (i, (spec, resolved, dependent)) in formatted.multi_version_rows.iter().enumerate() {
-            let prefix = if i == last_idx { "└─" } else { "├─" };
-            let spec_display = format!("{} {}", prefix, spec);
-            let spec_display = truncate_with_padding(&spec_display, w.spec - 2);
-            let resolved_display = format!("{} {}", prefix, resolved);
-            let resolved_display = truncate_with_padding(&resolved_display, w.resolved - 2);
-            let dependent_display = format!("{} {}", prefix, dependent);
-            let dependent_display = truncate_with_padding(&dependent_display, w.dependent - 2);
-
-            println!("│{:width$}│ {} │ {} │ {} │{:w_result$}│",
-                     "", spec_display, resolved_display, dependent_display, "",
-                     width = w.offered, w_result = w.result);
-        }
-    }
+    // Print multi-version dependency rows
+    print_multi_version_rows(&formatted.multi_version_rows);
 }
 
 //
