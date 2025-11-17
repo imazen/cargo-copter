@@ -1,4 +1,5 @@
 use crate::error_extract::{Diagnostic, parse_cargo_json};
+use crate::metadata;
 use fs2::FileExt;
 use lazy_static::lazy_static;
 use log::{debug, warn};
@@ -809,78 +810,32 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let metadata = match serde_json::from_str::<serde_json::Value>(&stdout) {
-        Ok(m) => m,
+    let parsed = match metadata::parse_metadata(&stdout) {
+        Ok(p) => p,
         Err(e) => {
             debug!("failed to parse cargo metadata JSON: {}", e);
             return all_versions;
         }
     };
 
-    // Look through resolve.nodes for ALL instances of our crate
-    if let Some(resolve) = metadata.get("resolve") {
-        if let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array()) {
-            debug!("processing {} nodes from cargo metadata", nodes.len());
+    // Find all versions of the target crate using the metadata module
+    let version_infos = metadata::find_all_versions(&parsed, crate_name);
+    debug!("processing {} version entries from cargo metadata", version_infos.len());
 
-            for (node_idx, node) in nodes.iter().enumerate() {
-                // Get the package name for this node (the dependent)
-                // node_id format: "registry+https://github.com/rust-lang/crates.io-index#package-name 1.0.0"
-                // or: "path+file:///path/to/crate#package-name 0.1.0"
-                let node_id = node.get("id").and_then(|i| i.as_str()).unwrap_or("");
+    for (idx, version_info) in version_infos.iter().enumerate() {
+        // Extract the dependent name from the node_id
+        let dependent_name = if let Some((name, _ver)) = metadata::parse_node_id(&version_info.node_id) {
+            name
+        } else {
+            version_info.node_id.clone()
+        };
 
-                // Extract just the package name after # and before the version
-                let dependent_name = if let Some(hash_pos) = node_id.find('#') {
-                    let after_hash = &node_id[hash_pos + 1..];
-                    // Split on whitespace to separate name from version
-                    after_hash.split_whitespace().next().unwrap_or("").to_string()
-                } else {
-                    node_id.split_whitespace().next().unwrap_or("").to_string()
-                };
+        debug!(
+            "  [{}]: spec='{}' resolved='{}' dependent='{}'",
+            idx, version_info.spec, version_info.version, dependent_name
+        );
 
-                debug!("  node[{}]: id='{}' dependent='{}'", node_idx, node_id, dependent_name);
-
-                if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
-                    for (dep_idx, dep) in deps.iter().enumerate() {
-                        if let Some(name) = dep.get("name").and_then(|n| n.as_str()) {
-                            if name == crate_name {
-                                debug!("    dep[{}]: found '{}'", dep_idx, crate_name);
-
-                                if let Some(pkg) = dep.get("pkg").and_then(|p| p.as_str()) {
-                                    debug!("      pkg: {}", pkg);
-
-                                    // pkg format: "SOURCE#crate-name@version"
-                                    if let Some(at_pos) = pkg.rfind('@') {
-                                        let resolved_version = pkg[at_pos + 1..].to_string();
-                                        // Try to find the spec from dep_kinds
-                                        let spec =
-                                            if let Some(dep_kinds) = dep.get("dep_kinds").and_then(|d| d.as_array()) {
-                                                if let Some(first_kind) = dep_kinds.first() {
-                                                    first_kind
-                                                        .get("version")
-                                                        .and_then(|v| v.as_str())
-                                                        .unwrap_or("*")
-                                                        .to_string()
-                                                } else {
-                                                    "*".to_string()
-                                                }
-                                            } else {
-                                                "*".to_string()
-                                            };
-
-                                        debug!(
-                                            "      adding: spec='{}' resolved='{}' dependent='{}'",
-                                            spec, resolved_version, dependent_name
-                                        );
-
-                                        all_versions.push((spec, resolved_version, dependent_name.clone()));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        all_versions.push((version_info.spec.clone(), version_info.version.clone(), dependent_name));
     }
 
     debug!("extracted {} total version entries for '{}'", all_versions.len(), crate_name);
@@ -890,43 +845,18 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
         all_versions.iter().map(|(_, resolved, _)| resolved).collect();
 
     if unique_versions.len() > 1 {
-        // Multiple versions detected - log the surrounding JSON for debugging
+        // Multiple versions detected - log them
         warn!("⚠️  Multiple versions of '{}' detected in dependency tree:", crate_name);
         for (spec, resolved, dependent) in &all_versions {
             warn!("  {} requires {} → resolved to {} (via {})", dependent, spec, resolved, crate_name);
         }
 
-        // Log the relevant JSON nodes to both console and failure log
-        if let Some(resolve) = metadata.get("resolve") {
-            if let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array()) {
-                warn!("Relevant cargo metadata nodes:");
-                for node in nodes {
-                    if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
-                        for dep in deps {
-                            if let Some(name) = dep.get("name").and_then(|n| n.as_str()) {
-                                if name == crate_name {
-                                    // This node depends on our crate - log it
-                                    let node_json = serde_json::to_string_pretty(node)
-                                        .unwrap_or_else(|_| "JSON serialization failed".to_string());
-                                    warn!("Node: {}", node_json);
-
-                                    // Also log to failure log file if initialized
-                                    if let Some(ref log_path) = *FAILURE_LOG.lock().unwrap() {
-                                        if let Ok(mut file) =
-                                            std::fs::OpenOptions::new().create(true).append(true).open(log_path)
-                                        {
-                                            let _ = writeln!(
-                                                file,
-                                                "\n=== Multi-version detection for '{}' ===",
-                                                crate_name
-                                            );
-                                            let _ = writeln!(file, "{}", node_json);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+        // Log to failure log file if initialized
+        if let Some(ref log_path) = *FAILURE_LOG.lock().unwrap() {
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(log_path) {
+                let _ = writeln!(file, "\n=== Multi-version detection for '{}' ===", crate_name);
+                for (spec, resolved, dependent) in &all_versions {
+                    let _ = writeln!(file, "  {} requires {} → resolved to {}", dependent, spec, resolved);
                 }
             }
         }

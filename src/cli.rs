@@ -35,10 +35,6 @@ pub struct CliArgs {
     #[arg(long, value_name = "VERSION", num_args = 1..)]
     pub test_versions: Vec<String>,
 
-    /// Number of parallel test jobs
-    #[arg(long, short = 'j', default_value = "1")]
-    pub jobs: usize,
-
     /// HTML report output path
     #[arg(long, default_value = "copter-report.html")]
     pub output: PathBuf,
@@ -109,11 +105,6 @@ impl CliArgs {
             );
         }
 
-        // Validate jobs >= 1
-        if self.jobs == 0 {
-            return Err("--jobs must be at least 1".to_string());
-        }
-
         // Check if we have a way to determine the crate name
         let has_path = self.path.is_some();
         let has_crate = self.crate_name.is_some();
@@ -143,34 +134,10 @@ mod tests {
             dependent_paths: vec![],
             test_versions: vec![],
             force_versions: vec![],
-            jobs: 1,
             output: PathBuf::from("report.html"),
             staging_dir: PathBuf::from(".copter/staging"),
             no_check: true,
             no_test: true,
-            json: false,
-            clean: false,
-            error_lines: 10,
-            skip_normal_testing: false,
-        };
-        assert!(args.validate().is_err());
-    }
-
-    #[test]
-    fn test_validate_zero_jobs_fails() {
-        let args = CliArgs {
-            path: None,
-            crate_name: None,
-            top_dependents: 5,
-            dependents: vec![],
-            dependent_paths: vec![],
-            test_versions: vec![],
-            force_versions: vec![],
-            jobs: 0,
-            output: PathBuf::from("report.html"),
-            staging_dir: PathBuf::from(".copter/staging"),
-            no_check: false,
-            no_test: false,
             json: false,
             clean: false,
             error_lines: 10,
@@ -192,7 +159,6 @@ mod tests {
             dependent_paths: vec![],
             test_versions: vec![],
             force_versions: vec![],
-            jobs: 1,
             output: PathBuf::from("report.html"),
             staging_dir: PathBuf::from(".copter/staging"),
             no_check: false,

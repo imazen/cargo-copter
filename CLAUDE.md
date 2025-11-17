@@ -42,7 +42,7 @@ Implementation: `src/main.rs` (lines 530-600)
 1. **Parse CLI** → Validate args, extract versions (space-delimited supported)
 2. **Read Cargo.toml** → Extract crate name/version, capture git state
 3. **Query crates.io** → Fetch reverse dependencies (paginated)
-4. **ThreadPool testing** → Each dependent tested in parallel
+4. **Serial testing** → Each dependent tested sequentially
 5. **For each dependent**:
    - Download/cache `.crate` file
    - **Baseline test** (published version)
@@ -137,7 +137,6 @@ Version: 0.8.52 (offered)
 --test-versions <VER>...     # Multiple versions, space-delimited supported
 --force-versions             # Bypass semver requirements
 --features <FEATURES>...     # Passed to cargo fetch/check/test
--j, --jobs <N>               # Parallel testing
 --crate <NAME>               # Test published crate without local source
 --clean                      # Purge staging directory before running tests
 --error-lines <N>            # Max lines to show per error (default: 10, 0=unlimited)
@@ -147,7 +146,7 @@ Version: 0.8.52 (offered)
 ```bash
 cargo-copter --test-versions "0.8.0 0.8.48" 0.8.91
 cargo-copter --crate rgb --test-versions 0.8.50 --force-versions
-cargo-copter --features "serde unstable" --jobs 4
+cargo-copter --features "serde unstable"
 ```
 
 ## Common Workflows
@@ -155,7 +154,7 @@ cargo-copter --features "serde unstable" --jobs 4
 ### Test local WIP against top dependents
 ```bash
 cd ~/my-crate
-cargo-copter --top-dependents 10 --jobs 4
+cargo-copter --top-dependents 10
 ```
 
 ### Test multiple versions of published crate
