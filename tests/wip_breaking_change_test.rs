@@ -5,7 +5,6 @@
 /// 2. Published version passes against the same dependents
 /// 3. OfferedRow fields (spec, resolved) are properly populated (not "?")
 /// 4. Test results accurately reflect regression detection
-
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -46,32 +45,26 @@ fn test_wip_breaking_change_regression() {
     // Validate output contains expected elements
 
     // 1. Should test load_image in multi-version mode
-    assert!(stdout.contains("load_image") || stderr.contains("load_image"),
-        "Should mention load_image in output");
-    assert!(stdout.contains("multi-version") || stderr.contains("multi-version"),
-        "Should use multi-version testing");
+    assert!(stdout.contains("load_image") || stderr.contains("load_image"), "Should mention load_image in output");
+    assert!(stdout.contains("multi-version") || stderr.contains("multi-version"), "Should use multi-version testing");
 
     // 2. Baseline row should PASS with proper fields
-    assert!(stdout.contains("baseline") || stderr.contains("baseline"),
-        "Should have baseline row");
-    assert!(stdout.contains("PASSED") || stderr.contains("PASSED"),
-        "Baseline should pass");
-    assert!(stdout.contains("0.8.52"),
-        "Spec field should show '0.8.52' (not '?')");
+    assert!(stdout.contains("baseline") || stderr.contains("baseline"), "Should have baseline row");
+    assert!(stdout.contains("PASSED") || stderr.contains("PASSED"), "Baseline should pass");
+    assert!(stdout.contains("0.8.52"), "Spec field should show '0.8.52' (not '?')");
 
     // 3. WIP row should FAIL/REGRESS
-    assert!(stdout.contains("REGRESSED") || stdout.contains("✗"),
-        "WIP should show as regressed");
-    assert!(stdout.contains("0.8.91") || stdout.contains("this"),
-        "WIP should show version 0.8.91 or 'this'");
+    assert!(stdout.contains("REGRESSED") || stdout.contains("✗"), "WIP should show as regressed");
+    assert!(stdout.contains("0.8.91") || stdout.contains("this"), "WIP should show version 0.8.91 or 'this'");
 
     // 4. Should show error details about check failure
-    assert!(stdout.contains("cargo check failed") || stdout.contains("✓✗"),
-        "Should indicate check step failed (ICT = ✓✗)");
+    assert!(
+        stdout.contains("cargo check failed") || stdout.contains("✓✗"),
+        "Should indicate check step failed (ICT = ✓✗)"
+    );
 
     // 5. Summary should show 1 regressed
-    assert!(stdout.contains("Regressed: 1") || stderr.contains("Regressed: 1"),
-        "Summary should show 1 regression");
+    assert!(stdout.contains("Regressed: 1") || stderr.contains("Regressed: 1"), "Summary should show 1 regression");
 
     println!("\n✅ All validations passed!");
     println!("   - Baseline (0.8.52): PASSED ✓✓✓");
@@ -85,22 +78,18 @@ fn test_rgb_fixture_exists_and_is_valid() {
     // Verify that our rust-rgb fixture exists and has a valid structure
     use std::fs;
 
-    let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("test-crates/fixtures/rust-rgb-breaking");
+    let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-crates/fixtures/rust-rgb-breaking");
 
     assert!(fixture_dir.exists(), "Fixture directory should exist");
 
     let cargo_toml = fixture_dir.join("Cargo.toml");
     assert!(cargo_toml.exists(), "Cargo.toml should exist");
 
-    let cargo_content = fs::read_to_string(&cargo_toml)
-        .expect("Should be able to read Cargo.toml");
+    let cargo_content = fs::read_to_string(&cargo_toml).expect("Should be able to read Cargo.toml");
 
     // Verify it's the rgb crate with version 0.8.91
-    assert!(cargo_content.contains("name = \"rgb\""),
-        "Should be the rgb crate");
-    assert!(cargo_content.contains("0.8.91"),
-        "Should be version 0.8.91 (the WIP version with breaking changes)");
+    assert!(cargo_content.contains("name = \"rgb\""), "Should be the rgb crate");
+    assert!(cargo_content.contains("0.8.91"), "Should be version 0.8.91 (the WIP version with breaking changes)");
 
     // Verify src/lib.rs exists
     let lib_rs = fixture_dir.join("src/lib.rs");

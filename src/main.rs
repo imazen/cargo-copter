@@ -16,24 +16,24 @@ mod error_extract;
 mod report;
 mod toml_helpers;
 
+use flate2::read::GzDecoder;
+use lazy_static::lazy_static;
+use log::debug;
 use semver::Version;
 use std::env;
 use std::error::Error as StdError;
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string::FromUtf8Error;
-use std::sync::mpsc::{self, Sender, Receiver, RecvError};
-use std::time::Duration;
-use threadpool::ThreadPool;
-use tempfile::TempDir;
-use log::debug;
-use lazy_static::lazy_static;
 use std::sync::Mutex;
-use flate2::read::GzDecoder;
+use std::sync::mpsc::{self, Receiver, RecvError, Sender};
+use std::time::Duration;
 use tar::Archive;
+use tempfile::TempDir;
+use threadpool::ThreadPool;
 
 const USER_AGENT: &str = "cargo-copter/0.1.1 (https://github.com/imazen/cargo-copter)";
 
@@ -49,10 +49,7 @@ fn resolve_version_keyword(
             // User explicitly requested WIP version
             if let Some(manifest_path) = local_manifest {
                 debug!("Resolved 'this' to local WIP at {:?}", manifest_path);
-                Ok(Some(compile::VersionSource::Local {
-                    path: manifest_path.clone(),
-                    forced: false
-                }))
+                Ok(Some(compile::VersionSource::Local { path: manifest_path.clone(), forced: false }))
             } else {
                 status("Warning: 'this' specified but no local source available (--path or --crate)");
                 Ok(None)
@@ -63,10 +60,7 @@ fn resolve_version_keyword(
             match resolve_latest_version(crate_name, false) {
                 Ok(ver) => {
                     debug!("Resolved 'latest' to {}", ver);
-                    Ok(Some(compile::VersionSource::Published {
-                        version: ver,
-                        forced: false
-                    }))
+                    Ok(Some(compile::VersionSource::Published { version: ver, forced: false }))
                 }
                 Err(e) => {
                     status(&format!("Warning: Failed to resolve 'latest': {}", e));
@@ -79,10 +73,7 @@ fn resolve_version_keyword(
             match resolve_latest_version(crate_name, true) {
                 Ok(ver) => {
                     debug!("Resolved '{}' to {}", version_str, ver);
-                    Ok(Some(compile::VersionSource::Published {
-                        version: ver,
-                        forced: false
-                    }))
+                    Ok(Some(compile::VersionSource::Published { version: ver, forced: false }))
                 }
                 Err(e) => {
                     status(&format!("Warning: Failed to resolve '{}': {}", version_str, e));
@@ -103,10 +94,7 @@ fn resolve_version_keyword(
             Version::parse(version_str)?;
 
             // Literal version string (supports hyphens like "0.8.2-alpha2")
-            Ok(Some(compile::VersionSource::Published {
-                version: version_str.to_string(),
-                forced: false
-            }))
+            Ok(Some(compile::VersionSource::Published { version: version_str.to_string(), forced: false }))
         }
     }
 }
@@ -168,14 +156,9 @@ fn print_test_plan(
     _config: &Config,
 ) {
     // Format dependents list
-    let deps_display: Vec<String> = rev_deps.iter()
-        .map(|(name, ver)| {
-            if let Some(v) = ver {
-                format!("{}:{}", name, v)
-            } else {
-                name.clone()
-            }
-        })
+    let deps_display: Vec<String> = rev_deps
+        .iter()
+        .map(|(name, ver)| if let Some(v) = ver { format!("{}:{}", name, v) } else { name.clone() })
         .collect();
 
     // Format versions list with force indicators (deduplicate versions)
@@ -185,12 +168,8 @@ fn print_test_plan(
 
     for version in versions {
         let (version_str, is_forced) = match version {
-            compile::VersionSource::Published { version: v, .. } => {
-                (v.clone(), force_versions.contains(v))
-            }
-            compile::VersionSource::Local { .. } => {
-                ("this".to_string(), force_local)
-            }
+            compile::VersionSource::Published { version: v, .. } => (v.clone(), force_versions.contains(v)),
+            compile::VersionSource::Local { .. } => ("this".to_string(), force_local),
         };
 
         // Skip if we've already seen this version (dedup)
@@ -208,11 +187,7 @@ fn print_test_plan(
 
     // Print compact plan
     println!("\nTest Plan:");
-    println!("  {} × {} = {} tests",
-        rev_deps.len(),
-        versions_display.len(),
-        rev_deps.len() * versions_display.len()
-    );
+    println!("  {} × {} = {} tests", rev_deps.len(), versions_display.len(), rev_deps.len() * versions_display.len());
 
     // Show dependents (compact, comma-separated, max 80 chars per line)
     print!("  Dependents: ");
@@ -245,13 +220,11 @@ fn print_test_plan(
 
 fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
     // Initialize failure log and clear any previous contents
-    let log_path = std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("copter-failures.log");
+    let log_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join("copter-failures.log");
 
     // Truncate/clear the log file if it exists
     if log_path.exists() {
-        let _ = std::fs::write(&log_path, "");  // Clear file contents
+        let _ = std::fs::write(&log_path, ""); // Clear file contents
     }
 
     compile::init_failure_log(log_path.clone());
@@ -294,32 +267,20 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
 
         // Auto-insert non-forced variants for each forced version (unless --skip-normal-testing)
         if !args.skip_normal_testing {
-            let forced_versions: Vec<compile::VersionSource> = versions.iter()
-                .filter(|v| v.is_forced())
-                .cloned()
-                .collect();
+            let forced_versions: Vec<compile::VersionSource> =
+                versions.iter().filter(|v| v.is_forced()).cloned().collect();
 
             for forced_ver in forced_versions {
                 // Check if a non-forced variant already exists
                 let has_non_forced = match &forced_ver {
-                    compile::VersionSource::Published { version: fv, .. } => {
-                        versions.iter().any(|v| {
-                            match v {
-                                compile::VersionSource::Published { version: v, forced } =>
-                                    v == fv && !forced,
-                                _ => false,
-                            }
-                        })
-                    }
-                    compile::VersionSource::Local { path: fp, .. } => {
-                        versions.iter().any(|v| {
-                            match v {
-                                compile::VersionSource::Local { path: p, forced } =>
-                                    p == fp && !forced,
-                                _ => false,
-                            }
-                        })
-                    }
+                    compile::VersionSource::Published { version: fv, .. } => versions.iter().any(|v| match v {
+                        compile::VersionSource::Published { version: v, forced } => v == fv && !forced,
+                        _ => false,
+                    }),
+                    compile::VersionSource::Local { path: fp, .. } => versions.iter().any(|v| match v {
+                        compile::VersionSource::Local { path: p, forced } => p == fp && !forced,
+                        _ => false,
+                    }),
                 };
 
                 if !has_non_forced {
@@ -345,18 +306,16 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
 
                 // First, compare by version/path to group same versions together
                 let version_cmp = match (a, b) {
-                    (compile::VersionSource::Published { version: va, .. },
-                     compile::VersionSource::Published { version: vb, .. }) => {
-                        va.cmp(vb)
-                    }
-                    (compile::VersionSource::Local { path: pa, .. },
-                     compile::VersionSource::Local { path: pb, .. }) => {
-                        pa.cmp(pb)
-                    }
+                    (
+                        compile::VersionSource::Published { version: va, .. },
+                        compile::VersionSource::Published { version: vb, .. },
+                    ) => va.cmp(vb),
+                    (
+                        compile::VersionSource::Local { path: pa, .. },
+                        compile::VersionSource::Local { path: pb, .. },
+                    ) => pa.cmp(pb),
                     // Local versions come after published versions
-                    (compile::VersionSource::Published { .. }, compile::VersionSource::Local { .. }) => {
-                        Ordering::Less
-                    }
+                    (compile::VersionSource::Published { .. }, compile::VersionSource::Local { .. }) => Ordering::Less,
                     (compile::VersionSource::Local { .. }, compile::VersionSource::Published { .. }) => {
                         Ordering::Greater
                     }
@@ -366,7 +325,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
                 if version_cmp == Ordering::Equal {
                     let a_forced = a.is_forced();
                     let b_forced = b.is_forced();
-                    a_forced.cmp(&b_forced)  // false < true, so non-forced comes first
+                    a_forced.cmp(&b_forced) // false < true, so non-forced comes first
                 } else {
                     version_cmp
                 }
@@ -377,15 +336,13 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
         // Default: --test-versions baseline --force-versions this
         if let CrateOverride::Source(ref manifest_path) = config.next_override {
             // Check if "this" is already in the list
-            let this_already_added = versions.iter().any(|v| {
-                matches!(v, compile::VersionSource::Local { .. })
-            });
+            let this_already_added = versions.iter().any(|v| matches!(v, compile::VersionSource::Local { .. }));
 
             if !this_already_added {
                 debug!("Auto-adding 'this' version from {:?} (forced by default)", manifest_path);
                 versions.push(compile::VersionSource::Local {
                     path: manifest_path.clone(),
-                    forced: true  // Auto-added WIP is forced by default
+                    forced: true, // Auto-added WIP is forced by default
                 });
                 // Mark auto-added WIP as forced
                 force_local = true;
@@ -395,16 +352,13 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
             match resolve_latest_version(&config.crate_name, false) {
                 Ok(ver) => {
                     // Check if this version is already in the list
-                    let already_present = versions.iter().any(|v| {
-                        matches!(v, compile::VersionSource::Published { version, .. } if version == &ver)
-                    });
+                    let already_present = versions
+                        .iter()
+                        .any(|v| matches!(v, compile::VersionSource::Published { version, .. } if version == &ver));
 
                     if !already_present {
                         debug!("No local version, adding latest: {}", ver);
-                        versions.push(compile::VersionSource::Published {
-                            version: ver,
-                            forced: false
-                        });
+                        versions.push(compile::VersionSource::Published { version: ver, forced: false });
                     } else {
                         debug!("Latest version {} already in test list, skipping auto-add", ver);
                     }
@@ -437,13 +391,11 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
             .collect::<Result<Vec<_>, _>>()?
     } else if !args.dependents.is_empty() {
         // Explicit crate names from crates.io (parse name:version syntax)
-        args.dependents.iter()
-            .map(|spec| parse_dependent_spec(spec))
-            .collect()
+        args.dependents.iter().map(|spec| parse_dependent_spec(spec)).collect()
     } else {
         // Top N by downloads (no version spec)
-        let api_deps = api::get_top_dependents(&config.crate_name, args.top_dependents)
-            .map_err(|e| Error::CratesIoApiError(e))?;
+        let api_deps =
+            api::get_top_dependents(&config.crate_name, args.top_dependents).map_err(|e| Error::CratesIoApiError(e))?;
         api_deps.into_iter().map(|d| (d.name, None)).collect()
     };
 
@@ -456,16 +408,10 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
     let versions_to_test = test_versions.clone().unwrap_or_else(|| {
         let mut versions = Vec::new();
         if let CrateOverride::Source(ref manifest_path) = config.next_override {
-            versions.push(compile::VersionSource::Local {
-                path: manifest_path.clone(),
-                forced: force_local
-            });
+            versions.push(compile::VersionSource::Local { path: manifest_path.clone(), forced: force_local });
         } else {
             if let Ok(ver) = resolve_latest_version(&config.crate_name, false) {
-                versions.push(compile::VersionSource::Published {
-                    version: ver,
-                    forced: false
-                });
+                versions.push(compile::VersionSource::Published { version: ver, forced: false });
             }
         }
         versions
@@ -481,17 +427,11 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
             let mut versions = Vec::new();
             // Add "this" (local WIP) or "latest" if no local version
             if let CrateOverride::Source(ref manifest_path) = config.next_override {
-                versions.push(compile::VersionSource::Local {
-                    path: manifest_path.clone(),
-                    forced: force_local
-                });
+                versions.push(compile::VersionSource::Local { path: manifest_path.clone(), forced: force_local });
             } else {
                 // No local version (only --crate), add "latest" as final version
                 if let Ok(ver) = resolve_latest_version(&config.crate_name, false) {
-                    versions.push(compile::VersionSource::Published {
-                        version: ver,
-                        forced: false
-                    });
+                    versions.push(compile::VersionSource::Published { version: ver, forced: false });
                 }
             }
             versions
@@ -502,9 +442,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
     }
 
     // Initialize table widths based on versions being tested
-    let version_strings: Vec<String> = versions_to_test.iter()
-        .map(|v| v.label())
-        .collect();
+    let version_strings: Vec<String> = versions_to_test.iter().map(|v| v.label()).collect();
     report::init_table_widths(&version_strings, &config.display_version(), !config.force_versions.is_empty());
 
     // Print table header for streaming output
@@ -549,7 +487,13 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
 
     // Generate markdown report
     let markdown_path = PathBuf::from("copter-report.md");
-    match report::export_markdown_table_report(&all_rows, &markdown_path, &config.crate_name, &config.display_version(), total) {
+    match report::export_markdown_table_report(
+        &all_rows,
+        &markdown_path,
+        &config.crate_name,
+        &config.display_version(),
+        total,
+    ) {
         Ok(_) => {
             println!("Markdown report: {}", markdown_path.display());
         }
@@ -577,8 +521,8 @@ struct Config {
     is_dirty: bool,
     staging_dir: PathBuf,
     next_override: CrateOverride,
-    force_versions: Vec<String>,  // List of versions to force (bypass semver)
-    error_lines: usize,  // Maximum lines to show per error (0 = unlimited)
+    force_versions: Vec<String>, // List of versions to force (bypass semver)
+    error_lines: usize,          // Maximum lines to show per error (0 = unlimited)
 }
 
 impl Config {
@@ -597,7 +541,7 @@ impl Config {
 #[derive(Clone)]
 enum CrateOverride {
     Default,
-    Source(PathBuf)
+    Source(PathBuf),
 }
 
 /// Get short git hash (7 chars) if in a git repository
@@ -631,11 +575,7 @@ fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
 
         // Check if --path is also specified (for "this" version)
         let (version, next_override) = if let Some(ref path) = args.path {
-            let manifest = if path.is_dir() {
-                path.join("Cargo.toml")
-            } else {
-                path.clone()
-            };
+            let manifest = if path.is_dir() { path.join("Cargo.toml") } else { path.clone() };
             debug!("Using --path for 'this' version: {:?}", manifest);
 
             // Extract version from the manifest
@@ -673,11 +613,7 @@ fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
     } else {
         // No --crate, use --path or ./Cargo.toml
         let manifest = if let Some(ref path) = args.path {
-            if path.is_dir() {
-                path.join("Cargo.toml")
-            } else {
-                path.clone()
-            }
+            if path.is_dir() { path.join("Cargo.toml") } else { path.clone() }
         } else {
             let env_manifest = env::var("COPTER_MANIFEST");
             PathBuf::from(env_manifest.unwrap_or_else(|_| "./Cargo.toml".to_string()))
@@ -726,7 +662,6 @@ fn get_crate_info(manifest_path: &Path) -> Result<(String, String), Error> {
     }
 }
 
-
 fn load_string(path: &Path) -> Result<String, Error> {
     let mut file = File::open(path)?;
     let mut s = String::new();
@@ -744,7 +679,7 @@ fn crate_url_with_parms(krate: &str, call: Option<&str>, parms: &[(&str, &str)])
     let url = format!("https://crates.io/api/v1/crates/{}", krate);
     let s = match call {
         Some(c) => format!("{}/{}", url, c),
-        None => url
+        None => url,
     };
 
     if !parms.is_empty() {
@@ -756,14 +691,9 @@ fn crate_url_with_parms(krate: &str, call: Option<&str>, parms: &[(&str, &str)])
     }
 }
 
-
 fn http_get_bytes(url: &str) -> Result<Vec<u8>, Error> {
-    let resp = ureq::get(url)
-        .set("User-Agent", USER_AGENT)
-        .call()?;
-    let len = resp.header("Content-Length")
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(0);
+    let resp = ureq::get(url).set("User-Agent", USER_AGENT).call()?;
+    let len = resp.header("Content-Length").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
     let mut data: Vec<u8> = Vec::with_capacity(len);
     resp.into_reader().read_to_end(&mut data)?;
     Ok(data)
@@ -779,7 +709,7 @@ struct RevDep {
 #[derive(Debug)]
 struct TestResult {
     rev_dep: RevDep,
-    data: TestResultData
+    data: TestResultData,
 }
 
 #[derive(Debug)]
@@ -796,7 +726,6 @@ pub struct VersionTestOutcome {
     pub version_source: compile::VersionSource,
     pub result: compile::ThreeStepResult,
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VersionStatus {
@@ -831,25 +760,25 @@ pub struct OfferedRow {
 /// Reference to a dependency (primary or transitive)
 #[derive(Debug, Clone)]
 pub struct DependencyRef {
-    pub dependent_name: String,       // "image"
-    pub dependent_version: String,    // "0.25.8"
-    pub spec: String,                 // "^0.8.52" (what they require)
-    pub resolved_version: String,     // "0.8.91" (what cargo chose)
-    pub resolved_source: VersionSource,  // CratesIo | Local | Git
-    pub used_offered_version: bool,   // true if resolved == offered
+    pub dependent_name: String,         // "image"
+    pub dependent_version: String,      // "0.25.8"
+    pub spec: String,                   // "^0.8.52" (what they require)
+    pub resolved_version: String,       // "0.8.91" (what cargo chose)
+    pub resolved_source: VersionSource, // CratesIo | Local | Git
+    pub used_offered_version: bool,     // true if resolved == offered
 }
 
 /// Version offered for testing
 #[derive(Debug, Clone)]
 pub struct OfferedVersion {
-    pub version: String,  // "this(0.8.91)" or "0.8.51"
-    pub forced: bool,     // true shows [≠→!] suffix
+    pub version: String, // "this(0.8.91)" or "0.8.51"
+    pub forced: bool,    // true shows [≠→!] suffix
 }
 
 /// Test execution (Install/Check/Test)
 #[derive(Debug, Clone)]
 pub struct TestExecution {
-    pub commands: Vec<TestCommand>,  // fetch, check, test
+    pub commands: Vec<TestCommand>, // fetch, check, test
 }
 
 /// A single test command (fetch, check, or test)
@@ -873,7 +802,7 @@ pub enum CommandType {
 pub struct CommandResult {
     pub passed: bool,
     pub duration: f64,
-    pub failures: Vec<CrateFailure>,  // Which crate(s) failed
+    pub failures: Vec<CrateFailure>, // Which crate(s) failed
 }
 
 /// A crate that failed during testing
@@ -901,7 +830,7 @@ pub enum VersionSource {
 /// Extract error message from diagnostics with stderr fallback
 fn extract_error_with_fallback(diagnostics: &[error_extract::Diagnostic], stderr: &str, _max_lines: usize) -> String {
     // Always extract FULL error for storage - truncation happens at display time
-    let msg = error_extract::extract_error_summary(diagnostics, 0);  // 0 = unlimited
+    let msg = error_extract::extract_error_summary(diagnostics, 0); // 0 = unlimited
     if !msg.is_empty() {
         msg
     } else {
@@ -918,11 +847,9 @@ fn compile_result_to_command(
     max_error_lines: usize,
 ) -> TestCommand {
     let failures = if !compile_result.success {
-        let error_msg = extract_error_with_fallback(&compile_result.diagnostics, &compile_result.stderr, max_error_lines);
-        vec![CrateFailure {
-            crate_name: crate_name.to_string(),
-            error_message: error_msg,
-        }]
+        let error_msg =
+            extract_error_with_fallback(&compile_result.diagnostics, &compile_result.stderr, max_error_lines);
+        vec![CrateFailure { crate_name: crate_name.to_string(), error_message: error_msg }]
     } else {
         vec![]
     };
@@ -953,7 +880,7 @@ impl TestResult {
 
                     // Determine baseline_passed for this row
                     let baseline_passed = if is_baseline {
-                        None  // This IS the baseline
+                        None // This IS the baseline
                     } else {
                         baseline.map(|b| b.result.is_success())
                     };
@@ -969,7 +896,10 @@ impl TestResult {
                         dependent_name: self.rev_dep.name.clone(),
                         dependent_version: self.rev_dep.vers.to_string(),
                         spec: outcome.result.original_requirement.clone().unwrap_or_else(|| "?".to_string()),
-                        resolved_version: outcome.result.actual_version.clone()
+                        resolved_version: outcome
+                            .result
+                            .actual_version
+                            .clone()
                             .or(outcome.result.expected_version.clone())
                             .unwrap_or_else(|| "?".to_string()),
                         resolved_source,
@@ -994,7 +924,7 @@ impl TestResult {
                         &outcome.result.fetch,
                         CommandType::Fetch,
                         &self.rev_dep.name,
-                        max_error_lines
+                        max_error_lines,
                     ));
 
                     // Check command (if ran)
@@ -1003,7 +933,7 @@ impl TestResult {
                             check,
                             CommandType::Check,
                             &self.rev_dep.name,
-                            max_error_lines
+                            max_error_lines,
                         ));
                     }
 
@@ -1013,7 +943,7 @@ impl TestResult {
                             test,
                             CommandType::Test,
                             &self.rev_dep.name,
-                            max_error_lines
+                            max_error_lines,
                         ));
                     }
 
@@ -1023,7 +953,10 @@ impl TestResult {
                     let main_dependent_name = &self.rev_dep.name;
                     // Normalize name for comparison (cargo uses hyphens, crates.io might use underscores)
                     let normalized_main = main_dependent_name.replace('_', "-");
-                    let transitive = outcome.result.all_crate_versions.iter()
+                    let transitive = outcome
+                        .result
+                        .all_crate_versions
+                        .iter()
                         .filter(|(_, resolved_version, dependent_name)| {
                             let normalized_dep = dependent_name.replace('_', "-");
                             // Exclude: same version as primary, or from main dependent itself
@@ -1033,13 +966,13 @@ impl TestResult {
                             TransitiveTest {
                                 dependency: DependencyRef {
                                     dependent_name: dependent_name.clone(),
-                                    dependent_version: String::new(),  // Not available from cargo tree
+                                    dependent_version: String::new(), // Not available from cargo tree
                                     spec: spec.clone(),
                                     resolved_version: resolved_version.clone(),
-                                    resolved_source: VersionSource::CratesIo,  // Assume crates.io for now
-                                    used_offered_version: false,  // Determine based on version match
+                                    resolved_source: VersionSource::CratesIo, // Assume crates.io for now
+                                    used_offered_version: false,              // Determine based on version match
                                 },
-                                depth: 1,  // All are depth 1 for simplicity
+                                depth: 1, // All are depth 1 for simplicity
                             }
                         })
                         .collect();
@@ -1106,24 +1039,17 @@ impl TestResult {
     }
 
     fn skipped(rev_dep: RevDep, reason: String) -> TestResult {
-        TestResult {
-            rev_dep,
-            data: TestResultData::Skipped(reason)
-        }
+        TestResult { rev_dep, data: TestResultData::Skipped(reason) }
     }
 
     fn error(rev_dep: RevDep, e: Error) -> TestResult {
-        TestResult {
-            rev_dep,
-            data: TestResultData::Error(e)
-        }
+        TestResult { rev_dep, data: TestResultData::Error(e) }
     }
 }
 
-
 struct TestResultReceiver {
     rev_dep: RevDepName,
-    rx: Receiver<TestResult>
+    rx: Receiver<TestResult>,
 }
 
 impl TestResultReceiver {
@@ -1131,11 +1057,7 @@ impl TestResultReceiver {
         match self.rx.recv() {
             Ok(r) => r,
             Err(e) => {
-                let r = RevDep {
-                    name: self.rev_dep,
-                    vers: Version::parse("0.0.0").unwrap(),
-                    resolved_version: None,
-                };
+                let r = RevDep { name: self.rev_dep, vers: Version::parse("0.0.0").unwrap(), resolved_version: None };
                 TestResult::error(r, Error::from(e))
             }
         }
@@ -1145,10 +1067,7 @@ impl TestResultReceiver {
 fn new_result_receiver(rev_dep: RevDepName) -> (Sender<TestResult>, TestResultReceiver) {
     let (tx, rx) = mpsc::channel();
 
-    let fut = TestResultReceiver {
-        rev_dep: rev_dep,
-        rx: rx
-    };
+    let fut = TestResultReceiver { rev_dep: rev_dep, rx: rx };
 
     (tx, fut)
 }
@@ -1194,7 +1113,6 @@ fn extract_resolved_version(rev_dep: &RevDep, crate_name: &str, staging_dir: &Pa
 
     // Verify Cargo.toml exists
     if crate_dir.join("Cargo.toml").exists() {
-
         // IMPORTANT: Restore Cargo.toml from backup to ensure clean state
         // Previous runs may have modified it with force-versions
         let cargo_toml = crate_dir.join("Cargo.toml");
@@ -1214,10 +1132,8 @@ fn extract_resolved_version(rev_dep: &RevDep, crate_name: &str, staging_dir: &Pa
         if !output.status.success() {
             // If --locked failed (no Cargo.lock), try without it to generate one
             debug!("cargo metadata --locked failed, trying without --locked");
-            output = Command::new("cargo")
-                .args(&["metadata", "--format-version=1"])
-                .current_dir(&crate_dir)
-                .output()?;
+            output =
+                Command::new("cargo").args(&["metadata", "--format-version=1"]).current_dir(&crate_dir).output()?;
         }
 
         if output.status.success() {
@@ -1317,7 +1233,7 @@ fn run_multi_version_test(
     rev_dep: RevDepName,
     dependent_version: Option<String>,
     mut test_versions: Vec<compile::VersionSource>,
-    force_local: bool,  // Whether local "this" versions should be forced
+    force_local: bool, // Whether local "this" versions should be forced
 ) -> TestResult {
     // Status line removed - redundant with table output
     // status(&format!("testing crate {} (multi-version)", rev_dep));
@@ -1326,11 +1242,7 @@ fn run_multi_version_test(
     let mut rev_dep = match resolve_rev_dep_version(rev_dep.clone(), dependent_version) {
         Ok(r) => r,
         Err(e) => {
-            let rev_dep = RevDep {
-                name: rev_dep,
-                vers: Version::parse("0.0.0").unwrap(),
-                resolved_version: None,
-            };
+            let rev_dep = RevDep { name: rev_dep, vers: Version::parse("0.0.0").unwrap(), resolved_version: None };
             return TestResult::error(rev_dep, e);
         }
     };
@@ -1360,22 +1272,17 @@ fn run_multi_version_test(
             // Always insert baseline at position 0
             // Even if the same version appears later in the list (from --force-versions),
             // this baseline will be tested in non-forced mode
-            test_versions.insert(0, compile::VersionSource::Published {
-                version: baseline.clone(),
-                forced: false
-            });
+            test_versions.insert(0, compile::VersionSource::Published { version: baseline.clone(), forced: false });
             debug!("Inserted baseline {} at position 0 (will be non-forced)", baseline);
         }
     }
 
     // Check version compatibility
     match check_version_compatibility(&rev_dep, &config) {
-        Ok(true) => {}, // Compatible
+        Ok(true) => {} // Compatible
         Ok(false) => {
-            let reason = format!(
-                "Dependent requires version incompatible with {} v{}",
-                config.crate_name, config.version
-            );
+            let reason =
+                format!("Dependent requires version incompatible with {} v{}", config.crate_name, config.version);
             return TestResult::skipped(rev_dep, reason);
         }
         Err(e) => {
@@ -1404,7 +1311,13 @@ fn run_multi_version_test(
     let mut outcomes = Vec::new();
     debug!("Total versions to test: {}", test_versions.len());
     for (idx, version_source) in test_versions.iter().enumerate() {
-        debug!("[{}/{}] Testing {} against version {}", idx + 1, test_versions.len(), rev_dep.name, version_source.label());
+        debug!(
+            "[{}/{}] Testing {} against version {}",
+            idx + 1,
+            test_versions.len(),
+            rev_dep.name,
+            version_source.label()
+        );
 
         // Check if this is the baseline (first version and matches baseline_version)
         let is_baseline = idx == 0 && baseline_version.is_some() && {
@@ -1414,68 +1327,67 @@ fn run_multi_version_test(
                 false
             }
         };
-        debug!("Version {}: idx={}, baseline_version={:?}, version_source={}, is_baseline={}",
-               idx, idx, baseline_version, version_source.label(), is_baseline);
+        debug!(
+            "Version {}: idx={}, baseline_version={:?}, version_source={}, is_baseline={}",
+            idx,
+            idx,
+            baseline_version,
+            version_source.label(),
+            is_baseline
+        );
 
         // For baseline: no download, no patch - test as-is
         // For offered versions: download and patch
         let override_path = if is_baseline {
             debug!("Testing baseline version {} without patching", version_source.label());
-            None  // Let cargo handle baseline naturally
+            None // Let cargo handle baseline naturally
         } else {
             match &version_source {
                 compile::VersionSource::Local { path, .. } => {
                     // If path points to Cargo.toml, extract directory
-                    let dir_path = if path.ends_with("Cargo.toml") {
-                        path.parent().unwrap().to_path_buf()
-                    } else {
-                        path.clone()
-                    };
+                    let dir_path =
+                        if path.ends_with("Cargo.toml") { path.parent().unwrap().to_path_buf() } else { path.clone() };
                     debug!("Using local version path: {:?}", dir_path);
                     Some(dir_path)
                 }
                 compile::VersionSource::Published { version, .. } => {
-                    match download_and_unpack_base_crate_version(
-                    &config.crate_name,
-                    version,
-                    &config.staging_dir,
-                ) {
-                    Ok(path) => Some(path),
-                    Err(e) => {
-                        status(&format!("Warning: Failed to download {} {}: {}", config.crate_name, version, e));
-                        // Create a failed outcome
-                        let is_forced = version_source.is_forced();
+                    match download_and_unpack_base_crate_version(&config.crate_name, version, &config.staging_dir) {
+                        Ok(path) => Some(path),
+                        Err(e) => {
+                            status(&format!("Warning: Failed to download {} {}: {}", config.crate_name, version, e));
+                            // Create a failed outcome
+                            let is_forced = version_source.is_forced();
 
-                        let failed_result = compile::ThreeStepResult {
-                            fetch: compile::CompileResult {
-                                step: compile::CompileStep::Fetch,
-                                success: false,
-                                stdout: String::new(),
-                                stderr: format!("Failed to download base crate: {}", e),
-                                duration: Duration::from_secs(0),
-                                diagnostics: Vec::new(),
-                            },
-                            check: None,
-                            test: None,
-                            actual_version: None,
-                            expected_version: Some(version.to_string()),
-                            forced_version: is_forced,
-                            original_requirement: original_requirement.clone(),
-                            all_crate_versions: vec![],
-                        };
-                        outcomes.push(VersionTestOutcome {
-                            version_source: version_source.clone(),
-                            result: failed_result,
-                        });
-                        continue;
+                            let failed_result = compile::ThreeStepResult {
+                                fetch: compile::CompileResult {
+                                    step: compile::CompileStep::Fetch,
+                                    success: false,
+                                    stdout: String::new(),
+                                    stderr: format!("Failed to download base crate: {}", e),
+                                    duration: Duration::from_secs(0),
+                                    diagnostics: Vec::new(),
+                                },
+                                check: None,
+                                test: None,
+                                actual_version: None,
+                                expected_version: Some(version.to_string()),
+                                forced_version: is_forced,
+                                original_requirement: original_requirement.clone(),
+                                all_crate_versions: vec![],
+                            };
+                            outcomes.push(VersionTestOutcome {
+                                version_source: version_source.clone(),
+                                result: failed_result,
+                            });
+                            continue;
+                        }
                     }
-                }
                 }
             }
         };
 
         let skip_check = false; // TODO: Get from args
-        let skip_test = false;  // TODO: Get from args
+        let skip_test = false; // TODO: Get from args
 
         // Determine expected version for verification and if it's forced
         // IMPORTANT: Baseline is NEVER forced, even if it's in --force-versions list
@@ -1532,10 +1444,7 @@ fn run_multi_version_test(
                     debug!("⚠️  Could not verify version for {} (cargo tree failed)", config.crate_name);
                 }
 
-                outcomes.push(VersionTestOutcome {
-                    version_source: version_source.clone(),
-                    result,
-                });
+                outcomes.push(VersionTestOutcome { version_source: version_source.clone(), result });
             }
             Err(e) => {
                 // ICT test failed with error - create a failed outcome
@@ -1544,10 +1453,7 @@ fn run_multi_version_test(
         }
     }
 
-    TestResult {
-        rev_dep,
-        data: TestResultData::MultiVersion(outcomes),
-    }
+    TestResult { rev_dep, data: TestResultData::MultiVersion(outcomes) }
 }
 
 fn check_version_compatibility(rev_dep: &RevDep, config: &Config) -> Result<bool, Error> {
@@ -1606,8 +1512,7 @@ fn check_requirement(req: &toml::Value, wip_version: &Version) -> Result<bool, E
 
     debug!("Checking if version {} satisfies requirement '{}'", wip_version, req_str);
 
-    let version_req = VersionReq::parse(&req_str)
-        .map_err(|e| Error::SemverError(e))?;
+    let version_req = VersionReq::parse(&req_str).map_err(|e| Error::SemverError(e))?;
 
     Ok(version_req.matches(wip_version))
 }
@@ -1670,57 +1575,41 @@ fn resolve_rev_dep_version(name: RevDepName, version: Option<String>) -> Result<
     // If version is provided, use it directly
     if let Some(ver_str) = version {
         debug!("using pinned version {} for {}", ver_str, name);
-        let vers = Version::parse(&ver_str)
-            .map_err(|e| Error::SemverError(e))?;
-        return Ok(RevDep {
-            name: name,
-            vers: vers,
-            resolved_version: None,
-        });
+        let vers = Version::parse(&ver_str).map_err(|e| Error::SemverError(e))?;
+        return Ok(RevDep { name: name, vers: vers, resolved_version: None });
     }
 
     // Otherwise, resolve latest version from crates.io
     debug!("resolving current version for {}", name);
 
-    let krate = api::get_client().get_crate(&name)
-        .map_err(|e| Error::CratesIoApiError(e.to_string()))?;
+    let krate = api::get_client().get_crate(&name).map_err(|e| Error::CratesIoApiError(e.to_string()))?;
 
     // Pull out the version numbers and sort them
-    let versions = krate.versions.iter()
-        .filter_map(|r| Version::parse(&r.num).ok());
+    let versions = krate.versions.iter().filter_map(|r| Version::parse(&r.num).ok());
     let mut versions = versions.collect::<Vec<_>>();
     versions.sort();
 
-    versions.pop().map(|v| {
-        RevDep {
-            name: name,
-            vers: v,
-            resolved_version: None,
-        }
-    }).ok_or(Error::NoCrateVersions)
+    versions.pop().map(|v| RevDep { name: name, vers: v, resolved_version: None }).ok_or(Error::NoCrateVersions)
 }
 
 /// Resolve 'latest' or 'latest-preview' keyword to actual version
 fn resolve_latest_version(crate_name: &str, include_prerelease: bool) -> Result<String, Error> {
     debug!("Resolving latest version for {} (prerelease={})", crate_name, include_prerelease);
 
-    let krate = api::get_client().get_crate(crate_name)
-        .map_err(|e| Error::CratesIoApiError(e.to_string()))?;
+    let krate = api::get_client().get_crate(crate_name).map_err(|e| Error::CratesIoApiError(e.to_string()))?;
 
     // Filter and sort versions
-    let mut versions: Vec<Version> = krate.versions.iter()
+    let mut versions: Vec<Version> = krate
+        .versions
+        .iter()
         .filter_map(|r| Version::parse(&r.num).ok())
         .filter(|v| include_prerelease || v.pre.is_empty()) // Filter pre-releases unless requested
         .collect();
 
     versions.sort();
 
-    versions.pop()
-        .map(|v| v.to_string())
-        .ok_or(Error::NoCrateVersions)
+    versions.pop().map(|v| v.to_string()).ok_or(Error::NoCrateVersions)
 }
-
-
 
 struct CrateHandle(PathBuf);
 
@@ -1732,8 +1621,7 @@ fn get_crate_handle(rev_dep: &RevDep) -> Result<CrateHandle, Error> {
     // FIXME: Path::exists() is unstable so just opening the file
     let crate_file_exists = File::open(&crate_file).is_ok();
     if !crate_file_exists {
-        let url = crate_url(&rev_dep.name,
-                            Some(&format!("{}/download", rev_dep.vers)));
+        let url = crate_url(&rev_dep.name, Some(&format!("{}/download", rev_dep.vers)));
         let body = http_get_bytes(&url)?;
         // FIXME: Should move this into place atomically
         let mut file = File::create(&crate_file)?;
@@ -1755,13 +1643,8 @@ fn download_and_unpack_base_crate_version(
 
     // version is already validated as concrete semver at input time
     // Create a pseudo-RevDep for downloading
-    let vers = Version::parse(version)
-        .map_err(|e| Error::SemverError(e))?;
-    let pseudo_dep = RevDep {
-        name: RevDepName::from(crate_name.to_string()),
-        vers,
-        resolved_version: None,
-    };
+    let vers = Version::parse(version).map_err(|e| Error::SemverError(e))?;
+    let pseudo_dep = RevDep { name: RevDepName::from(crate_name.to_string()), vers, resolved_version: None };
 
     // Download the crate
     let crate_handle = get_crate_handle(&pseudo_dep)?;
@@ -1851,10 +1734,11 @@ impl CrateHandle {
     }
 }
 
-
-
-fn status_lock<F>(f: F) where F: FnOnce() -> () {
-   lazy_static! {
+fn status_lock<F>(f: F)
+where
+    F: FnOnce() -> (),
+{
+    lazy_static! {
         static ref LOCK: Mutex<()> = Mutex::new(());
     }
     let _guard = LOCK.lock();
@@ -1870,12 +1754,15 @@ fn print_color(s: &str, fg: term::color::Color) {
         print!("{}", s);
     }
 
-    fn really_print_color(s: &str,
-                          fg: term::color::Color) -> bool {
+    fn really_print_color(s: &str, fg: term::color::Color) -> bool {
         if let Some(ref mut t) = term::stdout() {
-            if t.fg(fg).is_err() { return false }
+            if t.fg(fg).is_err() {
+                return false;
+            }
             let _ = t.attr(term::Attr::Bold);
-            if write!(t, "{}", s).is_err() { return false }
+            if write!(t, "{}", s).is_err() {
+                return false;
+            }
             let _ = t.reset();
         }
 
@@ -1889,7 +1776,6 @@ fn status(s: &str) {
         println!("{}", s);
     });
 }
-
 
 fn report_results(res: Result<Vec<TestResult>, Error>, _args: &cli::CliArgs, _config: &Config) {
     match res {
@@ -1935,13 +1821,13 @@ enum Error {
 }
 
 macro_rules! convert_error {
-    ($from:ty, $to:ident) => (
+    ($from:ty, $to:ident) => {
         impl From<$from> for Error {
             fn from(e: $from) -> Error {
                 Error::$to(e)
             }
         }
-    )
+    };
 }
 
 convert_error!(semver::Error, SemverError);
@@ -1984,7 +1870,7 @@ impl StdError for Error {
             Error::UreqError(ref e) => Some(e.as_ref()),
             Error::RecvError(ref e) => Some(e),
             Error::FromUtf8Error(ref e) => Some(e),
-            _ => None
+            _ => None,
         }
     }
 }

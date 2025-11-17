@@ -2,7 +2,6 @@
 ///
 /// These tests use local test fixtures to verify all result states
 /// without requiring network access to crates.io
-
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -23,18 +22,18 @@ fn run_cargo(args: &[&str], cwd: &Path) -> Output {
 
 // Helper to assert cargo command succeeded
 fn assert_cargo_success(output: &Output, context: &str) {
-    assert!(output.status.success(),
-            "{} failed with status: {:?}\nstderr: {}",
-            context,
-            output.status.code(),
-            String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{} failed with status: {:?}\nstderr: {}",
+        context,
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 // Helper to assert cargo command failed
 fn assert_cargo_failure(output: &Output, context: &str) {
-    assert!(!output.status.success(),
-            "{} should have failed but succeeded",
-            context);
+    assert!(!output.status.success(), "{} should have failed but succeeded", context);
 }
 
 // Note: These tests will be implemented once we expose the compile module's
@@ -150,8 +149,8 @@ fn test_test_regression_scenario() {
 
 #[test]
 fn test_staging_directory_creates_on_first_use() {
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
     let staging_dir = temp_dir.path().join("staging");
@@ -168,8 +167,8 @@ fn test_staging_directory_creates_on_first_use() {
 
 #[test]
 fn test_staging_directory_structure() {
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
     let staging_dir = temp_dir.path().join("staging");
@@ -185,9 +184,9 @@ fn test_staging_directory_structure() {
 
 #[test]
 fn test_staging_directory_caching_check() {
-    use tempfile::TempDir;
     use std::fs;
-    use std::time::{SystemTime, Duration};
+    use std::time::{Duration, SystemTime};
+    use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
     let staging_dir = temp_dir.path().join("staging");
@@ -218,8 +217,7 @@ fn test_cargo_metadata_works_on_fixture() {
 
     // Parse JSON to verify structure
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let metadata: serde_json::Value = serde_json::from_str(&stdout)
-        .expect("Should parse metadata JSON");
+    let metadata: serde_json::Value = serde_json::from_str(&stdout).expect("Should parse metadata JSON");
 
     // Verify expected fields exist
     assert!(metadata.get("packages").is_some());
@@ -240,10 +238,7 @@ fn test_cargo_metadata_shows_base_crate_dependency() {
         for package in packages {
             if let Some(deps) = package.get("dependencies").and_then(|d| d.as_array()) {
                 let has_base_crate = deps.iter().any(|dep| {
-                    dep.get("name")
-                        .and_then(|n| n.as_str())
-                        .map(|name| name == "base-crate")
-                        .unwrap_or(false)
+                    dep.get("name").and_then(|n| n.as_str()).map(|name| name == "base-crate").unwrap_or(false)
                 });
 
                 if has_base_crate {

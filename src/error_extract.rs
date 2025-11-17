@@ -2,7 +2,6 @@
 ///
 /// This module parses cargo's --message-format=json output to extract
 /// structured error information for better reporting.
-
 use serde::{Deserialize, Serialize};
 // BufRead not needed for current implementation
 
@@ -132,26 +131,17 @@ fn convert_compiler_message(msg: &CompilerMessage) -> Option<Diagnostic> {
     let code = msg.code.as_ref().map(|c| c.code.clone());
 
     // Find primary span
-    let primary_span = msg.spans.iter()
-        .find(|s| s.is_primary)
-        .map(|s| SpanInfo {
-            file_name: s.file_name.clone(),
-            line: s.line_start,
-            column: s.column_start,
-            label: s.label.clone(),
-        });
+    let primary_span = msg.spans.iter().find(|s| s.is_primary).map(|s| SpanInfo {
+        file_name: s.file_name.clone(),
+        line: s.line_start,
+        column: s.column_start,
+        label: s.label.clone(),
+    });
 
     // Use rendered output if available, otherwise construct from message
-    let rendered = msg.rendered.clone()
-        .unwrap_or_else(|| format_diagnostic_text(msg));
+    let rendered = msg.rendered.clone().unwrap_or_else(|| format_diagnostic_text(msg));
 
-    Some(Diagnostic {
-        level,
-        code,
-        message: msg.message.clone(),
-        rendered,
-        primary_span,
-    })
+    Some(Diagnostic { level, code, message: msg.message.clone(), rendered, primary_span })
 }
 
 fn format_diagnostic_text(msg: &CompilerMessage) -> String {
@@ -166,10 +156,7 @@ fn format_diagnostic_text(msg: &CompilerMessage) -> String {
 
     // Primary span location
     if let Some(span) = msg.spans.iter().find(|s| s.is_primary) {
-        output.push_str(&format!(
-            " --> {}:{}:{}\n",
-            span.file_name, span.line_start, span.column_start
-        ));
+        output.push_str(&format!(" --> {}:{}:{}\n", span.file_name, span.line_start, span.column_start));
     }
 
     output
@@ -182,7 +169,8 @@ fn format_diagnostic_text(msg: &CompilerMessage) -> String {
 /// * `diagnostics` - The diagnostics to extract errors from
 /// * `max_lines` - Maximum number of lines to include per error (0 = unlimited)
 pub fn extract_error_summary(diagnostics: &[Diagnostic], max_lines: usize) -> String {
-    diagnostics.iter()
+    diagnostics
+        .iter()
         .filter(|d| d.level.is_error())
         .map(|d| {
             if max_lines == 0 {

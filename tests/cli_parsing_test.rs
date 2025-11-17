@@ -2,7 +2,6 @@
 ///
 /// These tests verify that command-line arguments are parsed correctly
 /// and invalid combinations are rejected.
-
 use std::path::PathBuf;
 
 // Mock the CliArgs struct for testing

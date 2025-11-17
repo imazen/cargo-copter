@@ -1,0 +1,7 @@
+# Rustfmt configuration for cargo-copter
+# Stable-only options
+
+max_width = 120
+use_small_heuristics = "Max"
+newline_style = "Unix"
+edition = "2024"

@@ -6,7 +6,6 @@
 /// 2. WIP (local work-in-progress version)
 ///
 /// This is the most common usage pattern for crate authors checking their changes.
-
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -48,16 +47,13 @@ fn test_default_baseline_wip_output() {
     // Validate output structure
 
     // 1. Should test load_image
-    assert!(stdout.contains("load_image") || stderr.contains("load_image"),
-        "Should mention load_image in output");
+    assert!(stdout.contains("load_image") || stderr.contains("load_image"), "Should mention load_image in output");
 
     // 2. Should have baseline row
-    assert!(stdout.contains("baseline"),
-        "Should have baseline row marked with '- baseline'");
+    assert!(stdout.contains("baseline"), "Should have baseline row marked with '- baseline'");
 
     // 3. Should have WIP/this row
-    assert!(stdout.contains("this") || stdout.contains("0.8.91"),
-        "Should have WIP row with 'this' or version number");
+    assert!(stdout.contains("this") || stdout.contains("0.8.91"), "Should have WIP row with 'this' or version number");
 
     // 4. Should show two rows (baseline + WIP)
     let baseline_row_count = stdout.matches("- baseline").count();
@@ -70,13 +66,11 @@ fn test_default_baseline_wip_output() {
         println!("✅ Using multi-version path (good!)");
 
         // With multi-version, spec should be populated
-        assert!(!stdout.contains("│ ?        │"),
-            "Spec field should not be '?' in multi-version mode");
+        assert!(!stdout.contains("│ ?        │"), "Spec field should not be '?' in multi-version mode");
 
         // Should detect regression with multi-version testing
         let has_regression = stdout.contains("REGRESSED") || stdout.contains("✗");
-        assert!(has_regression,
-            "Multi-version path should detect regression (WIP breaks load_image)");
+        assert!(has_regression, "Multi-version path should detect regression (WIP breaks load_image)");
     } else {
         println!("⚠️  Using LEGACY path");
         println!("   🐛 BUG: Legacy path produces FALSE POSITIVES!");
@@ -87,8 +81,7 @@ fn test_default_baseline_wip_output() {
         println!("   - Reports PASSED when code actually breaks (false positive!)");
 
         // Legacy path limitations
-        assert!(stdout.contains("│ ?"),
-            "Legacy path should show '?' for spec field");
+        assert!(stdout.contains("│ ?"), "Legacy path should show '?' for spec field");
 
         // Legacy path FALSE POSITIVE: reports success when WIP actually breaks load_image
         let has_regression = stdout.contains("REGRESSED") || stdout.contains("✗");
@@ -114,10 +107,8 @@ fn test_default_baseline_wip_output() {
     }
 
     // 6. Validate basic structure regardless of path
-    assert!(stdout.contains("Summary:"),
-        "Should have summary section");
-    assert!(stdout.contains("Total:"),
-        "Summary should show total count");
+    assert!(stdout.contains("Summary:"), "Should have summary section");
+    assert!(stdout.contains("Total:"), "Summary should show total count");
 
     println!("\n✅ Default baseline + WIP test passed!");
     println!("   - Baseline row: present");

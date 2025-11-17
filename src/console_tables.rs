@@ -50,8 +50,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColSize {
     pub width: usize,
-    pub draw_horizontal_line_above: bool,  // Does this row want separator above it?
-    pub draw_horizontal_line_below: bool,  // Does this row want separator below it?
+    pub draw_horizontal_line_above: bool, // Does this row want separator above it?
+    pub draw_horizontal_line_below: bool, // Does this row want separator below it?
 }
 
 impl ColSize {
@@ -66,11 +66,7 @@ impl ColSize {
 
     /// Convenience constructor for columns with asymmetric separation needs
     pub fn new_asymmetric(width: usize, above: bool, below: bool) -> Self {
-        Self {
-            width,
-            draw_horizontal_line_above: above,
-            draw_horizontal_line_below: below,
-        }
+        Self { width, draw_horizontal_line_above: above, draw_horizontal_line_below: below }
     }
 }
 
@@ -86,10 +82,7 @@ pub struct TableFormatter {
 impl TableFormatter {
     /// Create a new table formatter
     pub fn new() -> Self {
-        Self {
-            previous_layout: None,
-            output: String::new(),
-        }
+        Self { previous_layout: None, output: String::new() }
     }
 
     /// Add a row to the table
@@ -153,7 +146,7 @@ impl TableFormatter {
 
 /// Truncate and pad string to exact width, handling Unicode properly
 fn truncate_and_pad(s: &str, max_width: usize) -> String {
-    use unicode_width::{UnicodeWidthStr, UnicodeWidthChar};
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
     let display_w = UnicodeWidthStr::width(s);
 
@@ -198,11 +191,11 @@ fn truncate_and_pad(s: &str, max_width: usize) -> String {
 #[derive(Debug, Clone, Copy)]
 pub struct ResolvedColSize {
     pub width: usize,
-    pub offset: usize, // offset from 0
-    pub from_above: bool,  // Is this column from the previous row (true) or the next row (false)?
-    pub draw_horizontal_line: bool,  // Does this column want horizontal line at this separator?
-    // For from_above=true: uses draw_horizontal_line_below
-    // For from_above=false: uses draw_horizontal_line_above
+    pub offset: usize,    // offset from 0
+    pub from_above: bool, // Is this column from the previous row (true) or the next row (false)?
+    pub draw_horizontal_line: bool, // Does this column want horizontal line at this separator?
+                          // For from_above=true: uses draw_horizontal_line_below
+                          // For from_above=false: uses draw_horizontal_line_above
 }
 
 /// Generate a separator row between two table rows with different column layouts
@@ -217,10 +210,7 @@ pub struct ResolvedColSize {
 ///
 /// # Returns
 /// A string containing the separator row with appropriate box-drawing characters
-pub fn format_separator_row(
-    previous_columns: &[ColSize],
-    next_columns: &[ColSize],
-) -> String {
+pub fn format_separator_row(previous_columns: &[ColSize], next_columns: &[ColSize]) -> String {
     // Step 1: Resolve all column sizes with their offsets
     let mut resolved_cols = Vec::new();
 
@@ -266,10 +256,8 @@ pub fn format_separator_row(
     let mut in_overlap_region = false;
     for pos in 0..total_width {
         // Find indices of columns at this position
-        let prev_idx = resolved_cols.iter().position(|c|
-            c.from_above && pos >= c.offset && pos < c.offset + c.width);
-        let next_idx = resolved_cols.iter().position(|c|
-            !c.from_above && pos >= c.offset && pos < c.offset + c.width);
+        let prev_idx = resolved_cols.iter().position(|c| c.from_above && pos >= c.offset && pos < c.offset + c.width);
+        let next_idx = resolved_cols.iter().position(|c| !c.from_above && pos >= c.offset && pos < c.offset + c.width);
 
         // Check if there's a divider at this position
         let is_divider = resolved_cols.iter().any(|c| pos == c.offset + c.width);
@@ -277,17 +265,20 @@ pub fn format_separator_row(
         // Toggle at dividers when previous position had overlapping open columns
         if is_divider && pos > 0 {
             let check_pos = pos - 1;
-            let check_prev_idx = resolved_cols.iter().position(|c|
-                c.from_above && check_pos >= c.offset && check_pos < c.offset + c.width);
-            let check_next_idx = resolved_cols.iter().position(|c|
-                !c.from_above && check_pos >= c.offset && check_pos < c.offset + c.width);
+            let check_prev_idx = resolved_cols
+                .iter()
+                .position(|c| c.from_above && check_pos >= c.offset && check_pos < c.offset + c.width);
+            let check_next_idx = resolved_cols
+                .iter()
+                .position(|c| !c.from_above && check_pos >= c.offset && check_pos < c.offset + c.width);
 
             if let (Some(cpi), Some(cni)) = (check_prev_idx, check_next_idx) {
                 // BUG: These flags have been mutated in previous iterations!
                 // We need to check ORIGINAL flags to detect overlapping open regions
                 let prev_hl = resolved_cols[cpi].draw_horizontal_line;
                 let next_hl = resolved_cols[cni].draw_horizontal_line;
-                if !prev_hl || !next_hl {  // At least one didn't originally want lines
+                if !prev_hl || !next_hl {
+                    // At least one didn't originally want lines
                     in_overlap_region = !in_overlap_region;
                 }
             }
@@ -333,16 +324,12 @@ pub fn format_separator_row(
     // Step 4: For each position, determine what character to draw
     for pos in 0..total_width {
         // Find which columns occupy this position
-        let prev_col = resolved_cols.iter()
-            .find(|c| c.from_above && pos >= c.offset && pos < c.offset + c.width);
-        let next_col = resolved_cols.iter()
-            .find(|c| !c.from_above && pos >= c.offset && pos < c.offset + c.width);
+        let prev_col = resolved_cols.iter().find(|c| c.from_above && pos >= c.offset && pos < c.offset + c.width);
+        let next_col = resolved_cols.iter().find(|c| !c.from_above && pos >= c.offset && pos < c.offset + c.width);
 
         // Check if this is a divider position (end of column + 1)
-        let is_prev_divider = resolved_cols.iter()
-            .any(|c| c.from_above && pos == c.offset + c.width);
-        let is_next_divider = resolved_cols.iter()
-            .any(|c| !c.from_above && pos == c.offset + c.width);
+        let is_prev_divider = resolved_cols.iter().any(|c| c.from_above && pos == c.offset + c.width);
+        let is_next_divider = resolved_cols.iter().any(|c| !c.from_above && pos == c.offset + c.width);
 
         // Determine if horizontal lines are wanted
         let prev_wants_line = prev_col.map(|c| c.draw_horizontal_line).unwrap_or(false);
@@ -352,19 +339,19 @@ pub fn format_separator_row(
             // At a vertical divider position - need junction character
             // Check what's to the left (previous position)
             let pos_left = pos.saturating_sub(1);
-            let left_prev_col = resolved_cols.iter()
-                .find(|c| c.from_above && pos_left >= c.offset && pos_left < c.offset + c.width);
-            let left_next_col = resolved_cols.iter()
-                .find(|c| !c.from_above && pos_left >= c.offset && pos_left < c.offset + c.width);
+            let left_prev_col =
+                resolved_cols.iter().find(|c| c.from_above && pos_left >= c.offset && pos_left < c.offset + c.width);
+            let left_next_col =
+                resolved_cols.iter().find(|c| !c.from_above && pos_left >= c.offset && pos_left < c.offset + c.width);
             let left_prev_wants = left_prev_col.map(|c| c.draw_horizontal_line).unwrap_or(false);
             let left_next_wants = left_next_col.map(|c| c.draw_horizontal_line).unwrap_or(false);
 
             // What's to the right (next position after divider)
             let pos_right = pos + 1;
-            let right_prev_col = resolved_cols.iter()
-                .find(|c| c.from_above && pos_right >= c.offset && pos_right < c.offset + c.width);
-            let right_next_col = resolved_cols.iter()
-                .find(|c| !c.from_above && pos_right >= c.offset && pos_right < c.offset + c.width);
+            let right_prev_col =
+                resolved_cols.iter().find(|c| c.from_above && pos_right >= c.offset && pos_right < c.offset + c.width);
+            let right_next_col =
+                resolved_cols.iter().find(|c| !c.from_above && pos_right >= c.offset && pos_right < c.offset + c.width);
             let right_prev_wants = right_prev_col.map(|c| c.draw_horizontal_line).unwrap_or(false);
             let right_next_wants = right_next_col.map(|c| c.draw_horizontal_line).unwrap_or(false);
 
@@ -407,11 +394,7 @@ pub fn format_separator_row(
         } else {
             // Not at a divider - just content space
             // Draw dashes if explicitly requested OR if we're in an overlapping open region
-            if prev_wants_line || next_wants_line || in_open_overlap {
-                '─'
-            } else {
-                ' '
-            }
+            if prev_wants_line || next_wants_line || in_open_overlap { '─' } else { ' ' }
         };
 
         result.push(ch);
@@ -420,10 +403,10 @@ pub fn format_separator_row(
         // At dividers, check if we're entering/exiting an overlapping open region
         if is_prev_divider || is_next_divider {
             let check_pos = pos.saturating_sub(1);
-            let check_prev = resolved_cols.iter()
-                .find(|c| c.from_above && check_pos >= c.offset && check_pos < c.offset + c.width);
-            let check_next = resolved_cols.iter()
-                .find(|c| !c.from_above && check_pos >= c.offset && check_pos < c.offset + c.width);
+            let check_prev =
+                resolved_cols.iter().find(|c| c.from_above && check_pos >= c.offset && check_pos < c.offset + c.width);
+            let check_next =
+                resolved_cols.iter().find(|c| !c.from_above && check_pos >= c.offset && check_pos < c.offset + c.width);
 
             if let (Some(p), Some(n)) = (check_prev, check_next) {
                 // Had overlap at previous position
@@ -462,26 +445,26 @@ mod tests {
         // Carefully designed to hit all 11 characters:
         // Position:  0-1  2-4  5-6  7-11  12-15  16-19  20-23  24-27  28-31
         let row1 = vec![
-            ColSize::new(2, false),  // 0-1: rowspan
-            ColSize::new(3, true),   // 2-4: div@5, ├
-            ColSize::new(2, true),   // 6-7: div@8, for corners
-            ColSize::new(5, true),   // 9-13: div@14, ┼
-            ColSize::new(4, true),   // 15-18: div@19, ┤/┴
-            ColSize::new(4, true),   // 20-23: div@24, ┘
-            ColSize::new(4, false),  // 25-28: no div, space/corner
-            ColSize::new(3, true),   // 29-31: div@32
+            ColSize::new(2, false), // 0-1: rowspan
+            ColSize::new(3, true),  // 2-4: div@5, ├
+            ColSize::new(2, true),  // 6-7: div@8, for corners
+            ColSize::new(5, true),  // 9-13: div@14, ┼
+            ColSize::new(4, true),  // 15-18: div@19, ┤/┴
+            ColSize::new(4, true),  // 20-23: div@24, ┘
+            ColSize::new(4, false), // 25-28: no div, space/corner
+            ColSize::new(3, true),  // 29-31: div@32
         ];
 
         let row2 = vec![
-            ColSize::new(2, false),  // 0-1: rowspan, │
-            ColSize::new(3, true),   // 2-4: div@5, ├ (aligned!)
-            ColSize::new(1, false),  // 6: no div, for ┌
-            ColSize::new(2, true),   // 7-8: div@9, ┐
-            ColSize::new(5, true),   // 10-14: div@15, ┼ (almost aligned)
-            ColSize::new(4, false),  // 16-19: no div, └
-            ColSize::new(5, true),   // 20-24: div@25, ┬
-            ColSize::new(3, true),   // 26-28: div@29, corners
-            ColSize::new(4, true),   // 29-32: ┤
+            ColSize::new(2, false), // 0-1: rowspan, │
+            ColSize::new(3, true),  // 2-4: div@5, ├ (aligned!)
+            ColSize::new(1, false), // 6: no div, for ┌
+            ColSize::new(2, true),  // 7-8: div@9, ┐
+            ColSize::new(5, true),  // 10-14: div@15, ┼ (almost aligned)
+            ColSize::new(4, false), // 16-19: no div, └
+            ColSize::new(5, true),  // 20-24: div@25, ┬
+            ColSize::new(3, true),  // 26-28: div@29, corners
+            ColSize::new(4, true),  // 29-32: ┤
         ];
 
         let result = format_separator_row(&row1, &row2);
@@ -494,38 +477,38 @@ mod tests {
         // Corners need non-aligned dividers with specific hl patterns
         let corners_row1 = vec![
             ColSize::new(3, false),
-            ColSize::new(4, true),   // div@8
+            ColSize::new(4, true), // div@8
             ColSize::new(3, false),
         ];
         let corners_row2 = vec![
             ColSize::new(2, false),
-            ColSize::new(2, true),   // div@5 for ┌
+            ColSize::new(2, true), // div@5 for ┌
             ColSize::new(3, false),
-            ColSize::new(3, true),   // div@14 for ┐/└/┘
+            ColSize::new(3, true), // div@14 for ┐/└/┘
         ];
         let corner_result = format_separator_row(&corners_row1, &corners_row2);
         eprintln!("Corner test: {}", corner_result);
 
         // Test for ┐ (top-right): divider in next row only, hl to left, no hl to right
         let topright_row1 = vec![
-            ColSize::new(3, true),   // 0-2, div@3
-            ColSize::new(2, false),  // 4-5, div@6
+            ColSize::new(3, true),  // 0-2, div@3
+            ColSize::new(2, false), // 4-5, div@6
         ];
         let topright_row2 = vec![
-            ColSize::new(5, true),   // 0-4, div@5
-            ColSize::new(1, false),  // 6, div@7
+            ColSize::new(5, true),  // 0-4, div@5
+            ColSize::new(1, false), // 6, div@7
         ];
         let topright_result = format_separator_row(&topright_row1, &topright_row2);
         eprintln!("Top-right test: {}", topright_result);
 
         // Test for ┤ (right-tee): aligned dividers, hl to left, no hl to right
         let righttee_row1 = vec![
-            ColSize::new(3, true),   // 0-2, div@3
-            ColSize::new(2, false),  // 4-5, div@6
+            ColSize::new(3, true),  // 0-2, div@3
+            ColSize::new(2, false), // 4-5, div@6
         ];
         let righttee_row2 = vec![
-            ColSize::new(3, true),   // 0-2, div@3, aligned
-            ColSize::new(2, false),  // 4-5, div@6, aligned
+            ColSize::new(3, true),  // 0-2, div@3, aligned
+            ColSize::new(2, false), // 4-5, div@6, aligned
         ];
         let righttee_result = format_separator_row(&righttee_row1, &righttee_row2);
         eprintln!("Right-tee test: {}", righttee_result);
@@ -563,10 +546,7 @@ mod tests {
         eprintln!("Simple overlap [5,10]->[10,5] no hl:\n{}", result);
 
         // With partial hl
-        let row1_hl = vec![
-            ColSize::new_asymmetric(5, false, true),
-            ColSize::new_asymmetric(10, false, false),
-        ];
+        let row1_hl = vec![ColSize::new_asymmetric(5, false, true), ColSize::new_asymmetric(10, false, false)];
         let result2 = format_separator_row(&row1_hl, &row2);
         eprintln!("With row1[0] hl_below:\n{}", result2);
     }
@@ -591,50 +571,36 @@ mod tests {
         let mut result = String::new();
 
         // Row 0: 3 columns [2, 10, 10]
-        let row0 = vec![
-            ColSize::new(2, true),
-            ColSize::new(10, true),
-            ColSize::new(10, true),
-        ];
+        let row0 = vec![ColSize::new(2, true), ColSize::new(10, true), ColSize::new(10, true)];
 
         // Top border (no row before)
         result.push_str(&format_separator_row(&vec![], &row0));
 
         // Row 1: wants separation above for line 2, none below for line 3
         let row1 = vec![
-            ColSize::new_asymmetric(13, true, false),   // Want sep above, not below
-            ColSize::new_asymmetric(10, true, false),   // Want sep above, not below
+            ColSize::new_asymmetric(13, true, false), // Want sep above, not below
+            ColSize::new_asymmetric(10, true, false), // Want sep above, not below
         ];
         result.push_str(&format_separator_row(&row0, &row1));
 
         // Row 2: misaligned columns [4, 19] - overlaps with row1 [13, 10]
         // No explicit hl request, but overlapping columns create connectors automatically!
         let row2 = vec![
-            ColSize::new(4, false),    // Overlaps with row1[0] at positions 0-3
-            ColSize::new(19, false),   // Overlaps with row1[0] at 5-12, with row1[1] at 14-22
+            ColSize::new(4, false),  // Overlaps with row1[0] at positions 0-3
+            ColSize::new(19, false), // Overlaps with row1[0] at 5-12, with row1[1] at 14-22
         ];
         result.push_str(&format_separator_row(&row1, &row2));
 
         // Row 3: back to 3 columns [2, 10, 10]
-        let row3 = vec![
-            ColSize::new(2, true),
-            ColSize::new(10, true),
-            ColSize::new(10, true),
-        ];
+        let row3 = vec![ColSize::new(2, true), ColSize::new(10, true), ColSize::new(10, true)];
         result.push_str(&format_separator_row(&row2, &row3));
 
         // Row 4: merged columns [13] with trailing rowspan [10]
-        let row4 = vec![
-            ColSize::new(13, true),
-            ColSize::new(10, false),
-        ];
+        let row4 = vec![ColSize::new(13, true), ColSize::new(10, false)];
         result.push_str(&format_separator_row(&row3, &row4));
 
         // Bottom border (no row after) - final row layout [15, 8]
-        let row_end = vec![
-            ColSize::new(15, true),
-            ColSize::new(8, true),
-        ];
+        let row_end = vec![ColSize::new(15, true), ColSize::new(8, true)];
         result.push_str(&format_separator_row(&row4, &row_end));
 
         eprintln!("Generated output:\n{}", result);
@@ -644,8 +610,7 @@ mod tests {
         let generated_lines: Vec<&str> = result.lines().collect();
         let expected_lines: Vec<&str> = expected_output.lines().collect();
 
-        assert_eq!(generated_lines.len(), expected_lines.len(),
-                   "Different number of lines");
+        assert_eq!(generated_lines.len(), expected_lines.len(), "Different number of lines");
 
         for (i, (generated, exp)) in generated_lines.iter().zip(expected_lines.iter()).enumerate() {
             assert_eq!(generated, exp, "Line {} differs", i + 1);
@@ -659,11 +624,11 @@ mod tests {
 
         // Row 1: Header row with 5 columns
         let layout1 = vec![
-            ColSize::new(12, true),  // Offered
-            ColSize::new(14, true),  // Spec
-            ColSize::new(20, true),  // Resolved
-            ColSize::new(30, true),  // Dependent
-            ColSize::new(26, true),  // Result
+            ColSize::new(12, true), // Offered
+            ColSize::new(14, true), // Spec
+            ColSize::new(20, true), // Resolved
+            ColSize::new(30, true), // Dependent
+            ColSize::new(26, true), // Result
         ];
         let cells1 = vec!["Offered", "Spec", "Resolved", "Dependent", "Result Time"];
         formatter.add_row(&cells1, &layout1);
@@ -674,8 +639,8 @@ mod tests {
 
         // Row 3: Error row spanning columns 2-5
         let layout_error = vec![
-            ColSize::new(12, false),  // Offered (no separator)
-            ColSize::new(90, true),   // Merged columns 2-5
+            ColSize::new(12, false), // Offered (no separator)
+            ColSize::new(90, true),  // Merged columns 2-5
         ];
         let cells3 = vec!["", "Error: cargo test failed - something went wrong"];
         formatter.add_row(&cells3, &layout_error);

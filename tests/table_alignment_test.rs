@@ -1,6 +1,5 @@
 /// Integration test for console table alignment
 /// This test verifies that all rows in the five-column table have consistent alignment
-
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 
@@ -12,12 +11,7 @@ struct CaptureWriter {
 impl CaptureWriter {
     fn new() -> (Self, Arc<Mutex<Vec<String>>>) {
         let captured = Arc::new(Mutex::new(Vec::new()));
-        (
-            CaptureWriter {
-                captured: captured.clone(),
-            },
-            captured,
-        )
+        (CaptureWriter { captured: captured.clone() }, captured)
     }
 }
 
@@ -39,32 +33,30 @@ impl Write for CaptureWriter {
 fn measure_display_width(s: &str) -> usize {
     // Use unicode-width crate's accurate measurement if available,
     // otherwise use a simple approximation
-    s.chars().map(|c| {
-        match c {
-            // Emojis - definitely 2 columns
-            '📦' | '📁' => 2,
-            // Box drawing - 1 column
-            '─' | '│' | '┌' | '┐' | '└' | '┘' | '├' | '┤' | '┬' | '┴' | '┼' => 1,
-            // Status symbols - need to verify these
-            '✓' | '✗' | '⊘' | '⚠' => {
-                // These are ambiguous - could be 1 or 2 depending on terminal
-                // Let's measure what they actually are
-                1 // ASSUMPTION - need to verify
-            }
-            '⚡' => 2, // This is Wide
-            // Regular ASCII
-            c if c.is_ascii() => 1,
-            // Everything else
-            _ => {
-                let code = c as u32;
-                if (code >= 0x1F300 && code <= 0x1F9FF) || (code >= 0x2600 && code <= 0x26FF) {
-                    2
-                } else {
-                    1
+    s.chars()
+        .map(|c| {
+            match c {
+                // Emojis - definitely 2 columns
+                '📦' | '📁' => 2,
+                // Box drawing - 1 column
+                '─' | '│' | '┌' | '┐' | '└' | '┘' | '├' | '┤' | '┬' | '┴' | '┼' => 1,
+                // Status symbols - need to verify these
+                '✓' | '✗' | '⊘' | '⚠' => {
+                    // These are ambiguous - could be 1 or 2 depending on terminal
+                    // Let's measure what they actually are
+                    1 // ASSUMPTION - need to verify
+                }
+                '⚡' => 2, // This is Wide
+                // Regular ASCII
+                c if c.is_ascii() => 1,
+                // Everything else
+                _ => {
+                    let code = c as u32;
+                    if (code >= 0x1F300 && code <= 0x1F9FF) || (code >= 0x2600 && code <= 0x26FF) { 2 } else { 1 }
                 }
             }
-        }
-    }).sum()
+        })
+        .sum()
 }
 
 #[test]
@@ -142,20 +134,13 @@ fn test_unicode_character_widths() {
 #[test]
 fn test_string_with_emojis() {
     // Test strings that contain emojis to see actual rendering
-    let test_strings = vec![
-        "0.8.51 📦",
-        "0.8.91 📁",
-        "✓✓✓",
-        "✗--",
-        "⊘ ↑0.8.48",
-    ];
+    let test_strings = vec!["0.8.51 📦", "0.8.91 📁", "✓✓✓", "✗--", "⊘ ↑0.8.48"];
 
     println!("\nString width measurements:");
     for s in test_strings {
         let char_count = s.chars().count();
         let byte_count = s.len();
         let measured_width = measure_display_width(s);
-        println!("  '{}': {} chars, {} bytes, {} display width",
-                 s, char_count, byte_count, measured_width);
+        println!("  '{}': {} chars, {} bytes, {} display width", s, char_count, byte_count, measured_width);
     }
 }

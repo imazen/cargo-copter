@@ -85,16 +85,12 @@ impl CliArgs {
         let mut args = CliArgs::parse();
 
         // Split test_versions on whitespace to support quoted lists like '0.8.51 0.8.91-alpha.3'
-        args.test_versions = args.test_versions
-            .iter()
-            .flat_map(|s| s.split_whitespace().map(|v| v.to_string()))
-            .collect();
+        args.test_versions =
+            args.test_versions.iter().flat_map(|s| s.split_whitespace().map(|v| v.to_string())).collect();
 
         // Split force_versions on whitespace as well
-        args.force_versions = args.force_versions
-            .iter()
-            .flat_map(|s| s.split_whitespace().map(|v| v.to_string()))
-            .collect();
+        args.force_versions =
+            args.force_versions.iter().flat_map(|s| s.split_whitespace().map(|v| v.to_string())).collect();
 
         args
     }
@@ -107,10 +103,10 @@ impl CliArgs {
         }
 
         // Need at least one of: top_dependents, dependents, or dependent_paths
-        if self.top_dependents == 0
-            && self.dependents.is_empty()
-            && self.dependent_paths.is_empty() {
-            return Err("Must specify at least one of: --top-dependents, --dependents, or --dependent-paths".to_string());
+        if self.top_dependents == 0 && self.dependents.is_empty() && self.dependent_paths.is_empty() {
+            return Err(
+                "Must specify at least one of: --top-dependents, --dependents, or --dependent-paths".to_string()
+            );
         }
 
         // Validate jobs >= 1
@@ -124,16 +120,13 @@ impl CliArgs {
         let has_local_manifest = std::path::Path::new("./Cargo.toml").exists();
 
         if !has_path && !has_crate && !has_local_manifest {
-            return Err(
-                "Cannot determine which crate to test. \
+            return Err("Cannot determine which crate to test. \
                  Please specify --path <PATH>, --crate <NAME>, or run from a crate directory with ./Cargo.toml"
-                    .to_string(),
-            );
+                .to_string());
         }
 
         Ok(())
     }
-
 }
 
 #[cfg(test)]
@@ -213,5 +206,4 @@ mod tests {
         std::fs::remove_file("./Cargo.toml.test").ok();
         assert!(result.is_ok());
     }
-
 }

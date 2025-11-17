@@ -1,16 +1,15 @@
+use crate::console_tables::{ColSize, TableFormatter};
+use crate::{CommandType, OfferedRow, VersionSource};
 /// Report generation module - Clean rewrite for OfferedRow streaming
 ///
 /// Provides console table output, HTML, and markdown reports
-
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use crate::{OfferedRow, CommandType, VersionSource};
 use term::color::Color;
-use unicode_width::{UnicodeWidthStr, UnicodeWidthChar};
 use terminal_size::{Width, terminal_size};
-use crate::console_tables::{ColSize, TableFormatter};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 //
 // Rendering Model Types
@@ -19,9 +18,9 @@ use crate::console_tables::{ColSize, TableFormatter};
 /// Status icon for the Offered column
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusIcon {
-    Passed,     // ✓
-    Failed,     // ✗
-    Skipped,    // ⊘ (not used - version didn't match what cargo resolved)
+    Passed,  // ✓
+    Failed,  // ✗
+    Skipped, // ⊘ (not used - version didn't match what cargo resolved)
 }
 
 impl StatusIcon {
@@ -37,9 +36,9 @@ impl StatusIcon {
 /// Resolution marker showing how cargo resolved the version
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Resolution {
-    Exact,      // = (cargo resolved to exact offered version)
-    Upgraded,   // ↑ (cargo upgraded within semver range)
-    Mismatch,   // ≠ (forced or semver incompatible)
+    Exact,    // = (cargo resolved to exact offered version)
+    Upgraded, // ↑ (cargo upgraded within semver range)
+    Mismatch, // ≠ (forced or semver incompatible)
 }
 
 impl Resolution {
@@ -63,7 +62,7 @@ pub enum OfferedCell {
         icon: StatusIcon,
         resolution: Resolution,
         version: String,
-        forced: bool,  // adds [≠→!] suffix if true
+        forced: bool, // adds [≠→!] suffix if true
     },
 }
 
@@ -82,32 +81,27 @@ impl OfferedCell {
 
         // Determine status icon
         let icon = if not_used {
-            StatusIcon::Skipped  // Version wasn't used (cargo chose different version)
+            StatusIcon::Skipped // Version wasn't used (cargo chose different version)
         } else {
             match (row.baseline_passed, overall_passed) {
-                (Some(true), true) => StatusIcon::Passed,   // PASSED
-                (Some(true), false) => StatusIcon::Failed,  // REGRESSED
-                (Some(false), _) => StatusIcon::Failed,     // BROKEN (baseline failed)
-                (None, true) => StatusIcon::Passed,         // PASSED (no baseline)
-                (None, false) => StatusIcon::Failed,        // FAILED (no baseline)
+                (Some(true), true) => StatusIcon::Passed,  // PASSED
+                (Some(true), false) => StatusIcon::Failed, // REGRESSED
+                (Some(false), _) => StatusIcon::Failed,    // BROKEN (baseline failed)
+                (None, true) => StatusIcon::Passed,        // PASSED (no baseline)
+                (None, false) => StatusIcon::Failed,       // FAILED (no baseline)
             }
         };
 
         // Determine resolution marker
         let resolution = if offered.forced {
-            Resolution::Mismatch  // Forced versions always show ≠
+            Resolution::Mismatch // Forced versions always show ≠
         } else if row.primary.used_offered_version {
-            Resolution::Exact     // Cargo chose exactly what we offered
+            Resolution::Exact // Cargo chose exactly what we offered
         } else {
-            Resolution::Upgraded  // Cargo upgraded to something else
+            Resolution::Upgraded // Cargo upgraded to something else
         };
 
-        OfferedCell::Tested {
-            icon,
-            resolution,
-            version: offered.version.clone(),
-            forced: offered.forced,
-        }
+        OfferedCell::Tested { icon, resolution, version: offered.version.clone(), forced: offered.forced }
     }
 
     /// Format the cell content for display
@@ -115,12 +109,7 @@ impl OfferedCell {
         match self {
             OfferedCell::Baseline => "- baseline".to_string(),
             OfferedCell::Tested { icon, resolution, version, forced } => {
-                let mut result = format!(
-                    "{} {}{}",
-                    icon.as_str(),
-                    resolution.as_str(),
-                    version
-                );
+                let mut result = format!("{} {}{}", icon.as_str(), resolution.as_str(), version);
                 if *forced {
                     result.push_str(" [≠→!]");
                 }
@@ -142,7 +131,7 @@ struct TableWidths {
     resolved: usize,
     dependent: usize,
     result: usize,
-    total: usize,  // Total table width including borders
+    total: usize, // Total table width including borders
 }
 
 impl TableWidths {
@@ -170,17 +159,10 @@ impl TableWidths {
         let dependent = if available > fixed_total {
             available - fixed_total
         } else {
-            20  // Minimum fallback
+            20 // Minimum fallback
         };
 
-        TableWidths {
-            offered,
-            spec,
-            resolved,
-            dependent,
-            result,
-            total: terminal_width,
-        }
+        TableWidths { offered, spec, resolved, dependent, result, total: terminal_width }
     }
 
     /// Calculate minimum offered column width for given versions
@@ -208,7 +190,7 @@ fn get_terminal_width() -> usize {
     if let Some((Width(w), _)) = terminal_size() {
         w as usize
     } else {
-        120  // Default width
+        120 // Default width
     }
 }
 
@@ -247,7 +229,7 @@ fn standard_5col_layout() -> Vec<ColSize> {
 fn error_row_layout() -> Vec<ColSize> {
     let w = get_widths();
     vec![
-        ColSize::new(w.offered, false),  // No separator for offered column
+        ColSize::new(w.offered, false), // No separator for offered column
         // Merged columns 2-5: spec + resolved + dependent + result + 3 internal borders
         ColSize::new(w.spec + w.resolved + w.dependent + w.result + 3, true),
     ]
@@ -259,13 +241,7 @@ fn header_row_layout() -> Vec<ColSize> {
 }
 
 /// Format a standard 5-column row as a string (for TableFormatter)
-fn format_5col_row_string(
-    offered: &str,
-    spec: &str,
-    resolved: &str,
-    dependent: &str,
-    result: &str,
-) -> String {
+fn format_5col_row_string(offered: &str, spec: &str, resolved: &str, dependent: &str, result: &str) -> String {
     let w = get_widths();
     let offered_display = truncate_with_padding(offered, w.offered - 2);
     let spec_display = truncate_with_padding(spec, w.spec - 2);
@@ -273,9 +249,10 @@ fn format_5col_row_string(
     let dependent_display = truncate_with_padding(dependent, w.dependent - 2);
     let result_display = truncate_with_padding(result, w.result - 2);
 
-    format!("│ {} │ {} │ {} │ {} │ {} │",
-            offered_display, spec_display, resolved_display,
-            dependent_display, result_display)
+    format!(
+        "│ {} │ {} │ {} │ {} │ {} │",
+        offered_display, spec_display, resolved_display, dependent_display, result_display
+    )
 }
 
 /// Print table header
@@ -291,18 +268,45 @@ pub fn format_table_header(crate_name: &str, display_version: &str, total_deps: 
     output.push_str(&format!("{}\n", "=".repeat(term_width)));
     output.push('\n');
 
-    output.push_str(&format!("┌{:─<width1$}┬{:─<width2$}┬{:─<width3$}┬{:─<width4$}┬{:─<width5$}┐\n",
-             "", "", "", "", "",
-             width1 = w.offered, width2 = w.spec, width3 = w.resolved,
-             width4 = w.dependent, width5 = w.result));
-    output.push_str(&format!("│{:^width1$}│{:^width2$}│{:^width3$}│{:^width4$}│{:^width5$}│\n",
-             "Offered", "Spec", "Resolved", "Dependent", "Result         Time",
-             width1 = w.offered, width2 = w.spec, width3 = w.resolved,
-             width4 = w.dependent, width5 = w.result));
-    output.push_str(&format!("├{:─<width1$}┼{:─<width2$}┼{:─<width3$}┼{:─<width4$}┼{:─<width5$}┤\n",
-             "", "", "", "", "",
-             width1 = w.offered, width2 = w.spec, width3 = w.resolved,
-             width4 = w.dependent, width5 = w.result));
+    output.push_str(&format!(
+        "┌{:─<width1$}┬{:─<width2$}┬{:─<width3$}┬{:─<width4$}┬{:─<width5$}┐\n",
+        "",
+        "",
+        "",
+        "",
+        "",
+        width1 = w.offered,
+        width2 = w.spec,
+        width3 = w.resolved,
+        width4 = w.dependent,
+        width5 = w.result
+    ));
+    output.push_str(&format!(
+        "│{:^width1$}│{:^width2$}│{:^width3$}│{:^width4$}│{:^width5$}│\n",
+        "Offered",
+        "Spec",
+        "Resolved",
+        "Dependent",
+        "Result         Time",
+        width1 = w.offered,
+        width2 = w.spec,
+        width3 = w.resolved,
+        width4 = w.dependent,
+        width5 = w.result
+    ));
+    output.push_str(&format!(
+        "├{:─<width1$}┼{:─<width2$}┼{:─<width3$}┼{:─<width4$}┼{:─<width5$}┤\n",
+        "",
+        "",
+        "",
+        "",
+        "",
+        width1 = w.offered,
+        width2 = w.spec,
+        width3 = w.resolved,
+        width4 = w.dependent,
+        width5 = w.result
+    ));
 
     output
 }
@@ -314,19 +318,37 @@ pub fn print_table_header(crate_name: &str, display_version: &str, total_deps: u
 /// Print separator line between dependents
 pub fn print_separator_line() {
     let w = get_widths();
-    println!("├{:─<width1$}┼{:─<width2$}┼{:─<width3$}┼{:─<width4$}┼{:─<width5$}┤",
-             "", "", "", "", "",
-             width1 = w.offered, width2 = w.spec, width3 = w.resolved,
-             width4 = w.dependent, width5 = w.result);
+    println!(
+        "├{:─<width1$}┼{:─<width2$}┼{:─<width3$}┼{:─<width4$}┼{:─<width5$}┤",
+        "",
+        "",
+        "",
+        "",
+        "",
+        width1 = w.offered,
+        width2 = w.spec,
+        width3 = w.resolved,
+        width4 = w.dependent,
+        width5 = w.result
+    );
 }
 
 /// Format table footer as a string
 pub fn format_table_footer() -> String {
     let w = get_widths();
-    format!("└{:─<width1$}┴{:─<width2$}┴{:─<width3$}┴{:─<width4$}┴{:─<width5$}┘\n",
-             "", "", "", "", "",
-             width1 = w.offered, width2 = w.spec, width3 = w.resolved,
-             width4 = w.dependent, width5 = w.result)
+    format!(
+        "└{:─<width1$}┴{:─<width2$}┴{:─<width3$}┴{:─<width4$}┴{:─<width5$}┘\n",
+        "",
+        "",
+        "",
+        "",
+        "",
+        width1 = w.offered,
+        width2 = w.spec,
+        width3 = w.resolved,
+        width4 = w.dependent,
+        width5 = w.result
+    )
 }
 
 /// Print table footer
@@ -391,12 +413,10 @@ pub fn error_signature(text: &str) -> String {
         // Match error lines like "error[E0432]: ..." and normalize
         if let Some(start) = line.find("error[") {
             if let Some(end) = line[start..].find("]:") {
-                let code = &line[start..start+end+2];
-                let message = line[start+end+2..].trim();
+                let code = &line[start..start + end + 2];
+                let message = line[start + end + 2..].trim();
                 // Remove specific line references to focus on error type
-                let normalized = message
-                    .split("-->").next().unwrap_or(message)
-                    .trim();
+                let normalized = message.split("-->").next().unwrap_or(message).trim();
                 errors.insert(format!("{} {}", code, normalized));
             }
         }
@@ -425,27 +445,38 @@ pub fn extract_error_text(row: &OfferedRow) -> Option<String> {
 /// Helper to print error box top border
 fn print_error_box_top(w: &TableWidths) {
     let shortened_offered = 4;
-    let corner0_width = if shortened_offered != w.offered {
-        w.offered - shortened_offered - 1
-    } else { 0 };
+    let corner0_width = if shortened_offered != w.offered { w.offered - shortened_offered - 1 } else { 0 };
 
     if corner0_width > 0 {
-        println!("│{:shortened$}┌{:─<c0$}┴{:─<c1$}┘{:padding$}└{:─<c2$}┘{:result$}│",
-                 "", "", "", "", "", "",
-                 shortened = shortened_offered,
-                 c0 = corner0_width,
-                 c1 = w.spec,
-                 padding = w.resolved,
-                 c2 = w.dependent,
-                 result = w.result);
+        println!(
+            "│{:shortened$}┌{:─<c0$}┴{:─<c1$}┘{:padding$}└{:─<c2$}┘{:result$}│",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            shortened = shortened_offered,
+            c0 = corner0_width,
+            c1 = w.spec,
+            padding = w.resolved,
+            c2 = w.dependent,
+            result = w.result
+        );
     } else {
-        println!("│{:offered$}├{:─<spec$}┘{:padding$}└{:─<dep$}┘{:result$}│",
-                "", "", "", "", "",
-                offered = w.offered,
-                spec = w.spec,
-                padding = w.resolved,
-                dep = w.dependent,
-                result = w.result);
+        println!(
+            "│{:offered$}├{:─<spec$}┘{:padding$}└{:─<dep$}┘{:result$}│",
+            "",
+            "",
+            "",
+            "",
+            "",
+            offered = w.offered,
+            spec = w.spec,
+            padding = w.resolved,
+            dep = w.dependent,
+            result = w.result
+        );
     }
 }
 
@@ -454,42 +485,53 @@ fn print_error_box_line(line: &str, w: &TableWidths) {
     let shortened_offered = 4;
     let error_text_width = w.total - 1 - shortened_offered - 1 - 1 - 1 - 1;
     let truncated = truncate_with_padding(line, error_text_width);
-    println!("│{:shortened$}│ {} │",
-             "", truncated,
-             shortened = shortened_offered);
+    println!("│{:shortened$}│ {} │", "", truncated, shortened = shortened_offered);
 }
 
 /// Helper to print error box bottom border (transitioning back to main table)
 fn print_error_box_bottom(w: &TableWidths) {
     let shortened_offered = 4;
-    let corner0_width = if shortened_offered != w.offered {
-        w.offered - shortened_offered - 1
-    } else { 0 };
+    let corner0_width = if shortened_offered != w.offered { w.offered - shortened_offered - 1 } else { 0 };
 
     if corner0_width > 0 {
-        println!("│{:shortened$}└{:─<c0$}┬{:─<c1$}┬{:─<c2$}┬{:─<c3$}┬{:─<c4$}┤",
-                 "", "", "", "", "", "",
-                 shortened = shortened_offered,
-                 c0 = corner0_width,
-                 c1 = w.spec,
-                 c2 = w.resolved,
-                 c3 = w.dependent,
-                 c4 = w.result);
+        println!(
+            "│{:shortened$}└{:─<c0$}┬{:─<c1$}┬{:─<c2$}┬{:─<c3$}┬{:─<c4$}┤",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            shortened = shortened_offered,
+            c0 = corner0_width,
+            c1 = w.spec,
+            c2 = w.resolved,
+            c3 = w.dependent,
+            c4 = w.result
+        );
     } else {
-        println!("│{:offered$}├{:─<spec$}┬{:─<resolved$}┬{:─<dep$}┬{:─<result$}┤",
-                "", "", "", "", "",
-                offered = w.offered,
-                spec = w.spec,
-                resolved = w.resolved,
-                dep = w.dependent,
-                result = w.result);
+        println!(
+            "│{:offered$}├{:─<spec$}┬{:─<resolved$}┬{:─<dep$}┬{:─<result$}┤",
+            "",
+            "",
+            "",
+            "",
+            "",
+            offered = w.offered,
+            spec = w.spec,
+            resolved = w.resolved,
+            dep = w.dependent,
+            result = w.result
+        );
     }
 }
 
 /// Print a main 5-column row with proper formatting and color
 fn print_main_row(cells: [&str; 5], color: Color) {
     let w = get_widths();
-    let displays: Vec<String> = cells.iter().zip([w.offered, w.spec, w.resolved, w.dependent, w.result].iter())
+    let displays: Vec<String> = cells
+        .iter()
+        .zip([w.offered, w.spec, w.resolved, w.dependent, w.result].iter())
         .map(|(cell, width)| truncate_with_padding(cell, width - 2))
         .collect();
 
@@ -497,25 +539,25 @@ fn print_main_row(cells: [&str; 5], color: Color) {
     // RGB(255, 255, 102) = bright yellow/gold
     if color == term::color::BRIGHT_YELLOW {
         print!("\x1b[38;2;255;255;102m");
-        print!("│ {} │ {} │ {} │ {} │ {} │",
-               displays[0], displays[1], displays[2], displays[3], displays[4]);
+        print!("│ {} │ {} │ {} │ {} │ {} │", displays[0], displays[1], displays[2], displays[3], displays[4]);
         print!("\x1b[0m");
         println!();
     } else if let Some(ref mut t) = term::stdout() {
         let _ = t.fg(color);
-        let _ = write!(t, "│ {} │ {} │ {} │ {} │ {} │",
-                      displays[0], displays[1], displays[2], displays[3], displays[4]);
+        let _ =
+            write!(t, "│ {} │ {} │ {} │ {} │ {} │", displays[0], displays[1], displays[2], displays[3], displays[4]);
         let _ = t.reset();
         println!();
     } else {
-        println!("│ {} │ {} │ {} │ {} │ {} │",
-                 displays[0], displays[1], displays[2], displays[3], displays[4]);
+        println!("│ {} │ {} │ {} │ {} │ {} │", displays[0], displays[1], displays[2], displays[3], displays[4]);
     }
 }
 
 /// Print multi-version dependency rows
 fn print_multi_version_rows(rows: &[(String, String, String)]) {
-    if rows.is_empty() { return; }
+    if rows.is_empty() {
+        return;
+    }
 
     let w = get_widths();
     let last_idx = rows.len() - 1;
@@ -529,9 +571,16 @@ fn print_multi_version_rows(rows: &[(String, String, String)]) {
         let dependent_display = format!("{} {}", prefix, dependent);
         let dependent_display = truncate_with_padding(&dependent_display, w.dependent - 2);
 
-        println!("│{:width$}│ {} │ {} │ {} │{:w_result$}│",
-                 "", spec_display, resolved_display, dependent_display, "",
-                 width = w.offered, w_result = w.result);
+        println!(
+            "│{:width$}│ {} │ {} │ {} │{:w_result$}│",
+            "",
+            spec_display,
+            resolved_display,
+            dependent_display,
+            "",
+            width = w.offered,
+            w_result = w.result
+        );
     }
 }
 
@@ -559,7 +608,8 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: O
                 formatted.error_details.clear();
                 // Replace the failure type with "same failure", keeping ICT marks
                 // For broken scenarios, also replace "test broken" -> "same failure"
-                formatted.result = formatted.result
+                formatted.result = formatted
+                    .result
                     .replace("test failed", "same failure")
                     .replace("build failed", "same failure")
                     .replace("fetch failed", "same failure")
@@ -579,9 +629,8 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: O
 
     // Print main row with color
     print_main_row(
-        [&formatted.offered, &formatted.spec, &formatted.resolved,
-         &formatted.dependent, &result_display],
-        formatted.color
+        [&formatted.offered, &formatted.spec, &formatted.resolved, &formatted.dependent, &result_display],
+        formatted.color,
     );
 
     // Print error box if present
@@ -627,11 +676,7 @@ fn format_offered_row(row: &OfferedRow, max_error_lines: usize) -> FormattedRow 
 
     // Format Spec column
     let spec_str = if let Some(ref offered) = row.offered {
-        if offered.forced {
-            format!("→ ={}", offered.version)
-        } else {
-            row.primary.spec.clone()
-        }
+        if offered.forced { format!("→ ={}", offered.version) } else { row.primary.spec.clone() }
     } else {
         row.primary.spec.clone()
     };
@@ -649,20 +694,15 @@ fn format_offered_row(row: &OfferedRow, max_error_lines: usize) -> FormattedRow 
 
     // Determine which step failed (if any)
     let overall_passed = row.test.commands.iter().all(|cmd| cmd.result.passed);
-    let failed_step = row.test.commands.iter()
-        .find(|cmd| !cmd.result.passed)
-        .map(|cmd| match cmd.command {
-            CommandType::Fetch => "fetch failed",
-            CommandType::Check => "build failed",
-            CommandType::Test => "test failed",
-        });
+    let failed_step = row.test.commands.iter().find(|cmd| !cmd.result.passed).map(|cmd| match cmd.command {
+        CommandType::Fetch => "fetch failed",
+        CommandType::Check => "build failed",
+        CommandType::Test => "test failed",
+    });
 
     // Check if this version wasn't actually used (non-forced and cargo chose different version)
-    let not_used = if let Some(ref offered) = row.offered {
-        !offered.forced && !row.primary.used_offered_version
-    } else {
-        false
-    };
+    let not_used =
+        if let Some(ref offered) = row.offered { !offered.forced && !row.primary.used_offered_version } else { false };
 
     // Detect if this is a baseline row (no offered version)
     let is_baseline = row.offered.is_none();
@@ -711,21 +751,19 @@ fn format_offered_row(row: &OfferedRow, max_error_lines: usize) -> FormattedRow 
     let result_str = format!("{} {}", result_status, ict_marks);
 
     // Calculate total time
-    let total_time: f64 = row.test.commands.iter()
-        .map(|cmd| cmd.result.duration)
-        .sum();
+    let total_time: f64 = row.test.commands.iter().map(|cmd| cmd.result.duration).sum();
     let time_str = format!("{:.1}s", total_time);
 
     // Determine color
     let color = if not_used {
-        term::color::YELLOW  // Brown (YELLOW/33) for skipped (not used) versions
+        term::color::YELLOW // Brown (YELLOW/33) for skipped (not used) versions
     } else if is_baseline && !overall_passed {
-        term::color::BRIGHT_YELLOW  // Bright yellow (93) for failed baseline rows
+        term::color::BRIGHT_YELLOW // Bright yellow (93) for failed baseline rows
     } else {
         match (row.baseline_passed, overall_passed) {
             (Some(true), true) => term::color::BRIGHT_GREEN,
             (Some(true), false) => term::color::BRIGHT_RED,
-            (Some(false), _) => term::color::BRIGHT_YELLOW,  // Bright yellow for broken (baseline was broken)
+            (Some(false), _) => term::color::BRIGHT_YELLOW, // Bright yellow for broken (baseline was broken)
             (None, true) => term::color::BRIGHT_GREEN,
             (None, false) => term::color::BRIGHT_RED,
         }
@@ -747,7 +785,7 @@ fn format_offered_row(row: &OfferedRow, max_error_lines: usize) -> FormattedRow 
                     // Split into lines and display each with bullet
                     let lines: Vec<&str> = failure.error_message.lines().collect();
                     let display_lines = if max_error_lines == 0 {
-                        &lines[..]  // Show all lines
+                        &lines[..] // Show all lines
                     } else {
                         &lines[..lines.len().min(max_error_lines)]
                     };
@@ -870,34 +908,29 @@ pub fn summarize_offered_rows(rows: &[OfferedRow]) -> TestSummary {
             let overall_passed = row.test.commands.iter().all(|cmd| cmd.result.passed);
 
             match (row.baseline_passed, overall_passed) {
-                (Some(true), true) => passed += 1,      // PASSED
-                (Some(true), false) => regressed += 1,  // REGRESSED
-                (Some(false), _) => broken += 1,        // BROKEN
-                (None, true) => passed += 1,            // PASSED (no baseline)
-                (None, false) => broken += 1,           // FAILED (no baseline)
+                (Some(true), true) => passed += 1,     // PASSED
+                (Some(true), false) => regressed += 1, // REGRESSED
+                (Some(false), _) => broken += 1,       // BROKEN
+                (None, true) => passed += 1,           // PASSED (no baseline)
+                (None, false) => broken += 1,          // FAILED (no baseline)
             }
         }
     }
 
-    TestSummary {
-        passed,
-        regressed,
-        broken,
-        total: passed + regressed + broken,
-    }
+    TestSummary { passed, regressed, broken, total: passed + regressed + broken }
 }
 
 /// Statistics for comparison table
 #[derive(Debug, Clone)]
 pub struct ComparisonStats {
-    pub version_label: String,  // "Default" or version number
+    pub version_label: String, // "Default" or version number
     pub total_tested: usize,
-    pub already_broken: Option<usize>,  // Only for baseline
+    pub already_broken: Option<usize>, // Only for baseline
     pub passed_fetch: usize,
     pub passed_check: usize,
     pub passed_test: usize,
     pub fully_passing: usize,
-    pub regressions: Vec<String>,  // List of "dependent:version" that regressed
+    pub regressions: Vec<String>, // List of "dependent:version" that regressed
 }
 
 /// Generate comparison table statistics
@@ -905,9 +938,7 @@ pub fn generate_comparison_table(rows: &[OfferedRow]) -> Vec<ComparisonStats> {
     use std::collections::{HashMap, HashSet};
 
     // First, collect baseline stats
-    let baseline_rows: Vec<&OfferedRow> = rows.iter()
-        .filter(|r| r.offered.is_none())
-        .collect();
+    let baseline_rows: Vec<&OfferedRow> = rows.iter().filter(|r| r.offered.is_none()).collect();
 
     let mut baseline_stats = ComparisonStats {
         version_label: "Default".to_string(),
@@ -929,16 +960,17 @@ pub fn generate_comparison_table(rows: &[OfferedRow]) -> Vec<ComparisonStats> {
 
         baseline_stats.total_tested += 1;
 
-        let passed_fetch = row.test.commands.iter()
-            .filter(|cmd| cmd.command == CommandType::Fetch)
-            .all(|cmd| cmd.result.passed);
+        let passed_fetch =
+            row.test.commands.iter().filter(|cmd| cmd.command == CommandType::Fetch).all(|cmd| cmd.result.passed);
 
-        let passed_check = row.test.commands.iter()
+        let passed_check = row
+            .test
+            .commands
+            .iter()
             .filter(|cmd| cmd.command == CommandType::Check || cmd.command == CommandType::Fetch)
             .all(|cmd| cmd.result.passed);
 
-        let passed_test = row.test.commands.iter()
-            .all(|cmd| cmd.result.passed);
+        let passed_test = row.test.commands.iter().all(|cmd| cmd.result.passed);
 
         // Only count as "already broken" if TEST failed (not build/check failures)
         if passed_check && !passed_test {
@@ -963,9 +995,7 @@ pub fn generate_comparison_table(rows: &[OfferedRow]) -> Vec<ComparisonStats> {
     let mut by_version: HashMap<String, Vec<&OfferedRow>> = HashMap::new();
     for row in rows {
         if let Some(ref offered) = row.offered {
-            by_version.entry(offered.version.clone())
-                .or_insert_with(Vec::new)
-                .push(row);
+            by_version.entry(offered.version.clone()).or_insert_with(Vec::new).push(row);
         }
     }
 
@@ -979,7 +1009,7 @@ pub fn generate_comparison_table(rows: &[OfferedRow]) -> Vec<ComparisonStats> {
         let mut stats = ComparisonStats {
             version_label: version.clone(),
             total_tested: 0,
-            already_broken: None,  // Don't show for offered versions
+            already_broken: None, // Don't show for offered versions
             passed_fetch: 0,
             passed_check: 0,
             passed_test: 0,
@@ -996,30 +1026,33 @@ pub fn generate_comparison_table(rows: &[OfferedRow]) -> Vec<ComparisonStats> {
 
             stats.total_tested += 1;
 
-            let passed_fetch = row.test.commands.iter()
-                .filter(|cmd| cmd.command == CommandType::Fetch)
-                .all(|cmd| cmd.result.passed);
+            let passed_fetch =
+                row.test.commands.iter().filter(|cmd| cmd.command == CommandType::Fetch).all(|cmd| cmd.result.passed);
 
-            let passed_check = row.test.commands.iter()
+            let passed_check = row
+                .test
+                .commands
+                .iter()
                 .filter(|cmd| cmd.command == CommandType::Check || cmd.command == CommandType::Fetch)
                 .all(|cmd| cmd.result.passed);
 
-            let passed_test = row.test.commands.iter()
-                .all(|cmd| cmd.result.passed);
+            let passed_test = row.test.commands.iter().all(|cmd| cmd.result.passed);
 
             // Only count if not already broken in baseline
-            let baseline_row = baseline_rows.iter()
-                .find(|br| br.primary.dependent_name == *dep_name);
+            let baseline_row = baseline_rows.iter().find(|br| br.primary.dependent_name == *dep_name);
 
-            let baseline_passed_check = baseline_row.map(|br| {
-                br.test.commands.iter()
-                    .filter(|cmd| cmd.command == CommandType::Check || cmd.command == CommandType::Fetch)
-                    .all(|cmd| cmd.result.passed)
-            }).unwrap_or(false);
+            let baseline_passed_check = baseline_row
+                .map(|br| {
+                    br.test
+                        .commands
+                        .iter()
+                        .filter(|cmd| cmd.command == CommandType::Check || cmd.command == CommandType::Fetch)
+                        .all(|cmd| cmd.result.passed)
+                })
+                .unwrap_or(false);
 
-            let baseline_passed_test = baseline_row.map(|br| {
-                br.test.commands.iter().all(|cmd| cmd.result.passed)
-            }).unwrap_or(false);
+            let baseline_passed_test =
+                baseline_row.map(|br| br.test.commands.iter().all(|cmd| cmd.result.passed)).unwrap_or(false);
 
             if baseline_passed_check {
                 // Only count working dependents
@@ -1036,9 +1069,7 @@ pub fn generate_comparison_table(rows: &[OfferedRow]) -> Vec<ComparisonStats> {
 
                 // Track regressions: baseline passed but offered failed
                 if baseline_passed_test && !passed_test {
-                    let baseline_version = baseline_row
-                        .map(|br| br.primary.resolved_version.as_str())
-                        .unwrap_or("?");
+                    let baseline_version = baseline_row.map(|br| br.primary.resolved_version.as_str()).unwrap_or("?");
                     stats.regressions.push(format!("{} ({})", dep_name, baseline_version));
                 }
             }
@@ -1124,7 +1155,13 @@ pub fn print_comparison_table(stats_list: &[ComparisonStats]) {
 //
 
 /// Generate markdown report with console table in code block
-pub fn export_markdown_table_report(rows: &[OfferedRow], output_path: &PathBuf, crate_name: &str, display_version: &str, total_deps: usize) -> std::io::Result<()> {
+pub fn export_markdown_table_report(
+    rows: &[OfferedRow],
+    output_path: &PathBuf,
+    crate_name: &str,
+    display_version: &str,
+    total_deps: usize,
+) -> std::io::Result<()> {
     let mut file = File::create(output_path)?;
     let summary = summarize_offered_rows(rows);
 
@@ -1181,8 +1218,10 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
     let result_display = format!("{:>12} {:>5}", formatted.result, formatted.time);
     let result_display = truncate_with_padding(&result_display, w.result - 2);
 
-    output.push_str(&format!("│ {} │ {} │ {} │ {} │ {} │\n",
-        offered_display, spec_display, resolved_display, dependent_display, result_display));
+    output.push_str(&format!(
+        "│ {} │ {} │ {} │ {} │ {} │\n",
+        offered_display, spec_display, resolved_display, dependent_display, result_display
+    ));
 
     // Error details (if any)
     if !formatted.error_details.is_empty() {
@@ -1191,10 +1230,19 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
         let corner2_width = w.dependent;
         let padding_width = w.spec + w.resolved + w.dependent - corner1_width - corner2_width;
 
-        output.push_str(&format!("│{:w_offered$}├{:─<corner1$}┘{:padding$}└{:─<corner2$}┘{:w_result$}│\n",
-            "", "", "", "", "",
-            w_offered = w.offered, corner1 = corner1_width,
-            padding = padding_width, corner2 = corner2_width, w_result = w.result));
+        output.push_str(&format!(
+            "│{:w_offered$}├{:─<corner1$}┘{:padding$}└{:─<corner2$}┘{:w_result$}│\n",
+            "",
+            "",
+            "",
+            "",
+            "",
+            w_offered = w.offered,
+            corner1 = corner1_width,
+            padding = padding_width,
+            corner2 = corner2_width,
+            w_result = w.result
+        ));
 
         for error_line in &formatted.error_details {
             let truncated = truncate_with_padding(error_line, error_text_width);
@@ -1202,10 +1250,19 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
         }
 
         if !is_last_in_group {
-            output.push_str(&format!("│{:w_offered$}├{:─<w_spec$}┬{:─<w_resolved$}┬{:─<w_dependent$}┬{:─<w_result$}┤\n",
-                "", "", "", "", "",
-                w_offered = w.offered, w_spec = w.spec, w_resolved = w.resolved,
-                w_dependent = w.dependent, w_result = w.result));
+            output.push_str(&format!(
+                "│{:w_offered$}├{:─<w_spec$}┬{:─<w_resolved$}┬{:─<w_dependent$}┬{:─<w_result$}┤\n",
+                "",
+                "",
+                "",
+                "",
+                "",
+                w_offered = w.offered,
+                w_spec = w.spec,
+                w_resolved = w.resolved,
+                w_dependent = w.dependent,
+                w_result = w.result
+            ));
         }
     }
 
@@ -1221,9 +1278,16 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
             let dependent_display = format!("{} {}", prefix, dependent);
             let dependent_display = truncate_with_padding(&dependent_display, w.dependent - 2);
 
-            output.push_str(&format!("│{:width$}│ {} │ {} │ {} │{:w_result$}│\n",
-                "", spec_display, resolved_display, dependent_display, "",
-                width = w.offered, w_result = w.result));
+            output.push_str(&format!(
+                "│{:width$}│ {} │ {} │ {} │{:w_result$}│\n",
+                "",
+                spec_display,
+                resolved_display,
+                dependent_display,
+                "",
+                width = w.offered,
+                w_result = w.result
+            ));
         }
     }
 

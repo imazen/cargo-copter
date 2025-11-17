@@ -1,14 +1,14 @@
-use std::fs::{self, OpenOptions};
-use std::io::{Write, BufWriter};
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::env;
-use std::time::{Duration, Instant};
-use std::sync::Mutex;
-use log::{debug, warn};
 use crate::error_extract::{Diagnostic, parse_cargo_json};
 use fs2::FileExt;
 use lazy_static::lazy_static;
+use log::{debug, warn};
+use std::env;
+use std::fs::{self, OpenOptions};
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 // Failure log file path
 lazy_static! {
@@ -31,13 +31,23 @@ pub fn log_failure(
     dependent: &str,
     dependent_version: &str,
     base_crate: &str,
-    test_label: &str,  // "baseline", "WIP", or version number
+    test_label: &str, // "baseline", "WIP", or version number
     command: &str,
     exit_code: Option<i32>,
     stdout: &str,
     stderr: &str,
 ) {
-    log_failure_with_diagnostics(dependent, dependent_version, base_crate, test_label, command, exit_code, stdout, stderr, &[]);
+    log_failure_with_diagnostics(
+        dependent,
+        dependent_version,
+        base_crate,
+        test_label,
+        command,
+        exit_code,
+        stdout,
+        stderr,
+        &[],
+    );
 }
 
 /// Log a compilation failure with parsed diagnostics for better readability
@@ -45,7 +55,7 @@ pub fn log_failure_with_diagnostics(
     dependent: &str,
     dependent_version: &str,
     base_crate: &str,
-    test_label: &str,  // "baseline", "WIP", or version number
+    test_label: &str, // "baseline", "WIP", or version number
     command: &str,
     exit_code: Option<i32>,
     stdout: &str,
@@ -56,16 +66,12 @@ pub fn log_failure_with_diagnostics(
         let log = FAILURE_LOG.lock().unwrap();
         match &*log {
             Some(path) => path.clone(),
-            None => return,  // Logging not initialized
+            None => return, // Logging not initialized
         }
     };
 
     // Open file with append mode
-    let file = match OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    {
+    let file = match OpenOptions::new().create(true).append(true).open(&log_path) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("Failed to open failure log: {}", e);
@@ -87,10 +93,7 @@ pub fn log_failure_with_diagnostics(
 
     // Generate error signature for deduplication
     let current_signature = if !diagnostics.is_empty() {
-        let error_text = diagnostics.iter()
-            .map(|d| d.rendered.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let error_text = diagnostics.iter().map(|d| d.rendered.as_str()).collect::<Vec<_>>().join("\n");
         crate::report::error_signature(&error_text)
     } else {
         crate::report::error_signature(stderr)
@@ -105,8 +108,11 @@ pub fn log_failure_with_diagnostics(
     };
 
     let _ = writeln!(writer, "\n{}", "=".repeat(100));
-    let _ = writeln!(writer, "[{}] FAILURE: {} {} testing {} {}",
-                     timestamp, dependent, dependent_version, base_crate, test_label);
+    let _ = writeln!(
+        writer,
+        "[{}] FAILURE: {} {} testing {} {}",
+        timestamp, dependent, dependent_version, base_crate, test_label
+    );
     let _ = writeln!(writer, "{}", "=".repeat(100));
     let _ = writeln!(writer, "Command: {}", command);
     let _ = writeln!(writer, "Exit code: {}", exit_str);
@@ -161,14 +167,12 @@ pub fn restore_cargo_toml(staging_path: &Path) -> Result<(), String> {
     // CRITICAL: Never overwrite existing .original - it might be from an interrupted run
     if !original.exists() {
         if cargo_toml.exists() {
-            fs::copy(&cargo_toml, &original)
-                .map_err(|e| format!("Failed to save original Cargo.toml: {}", e))?;
+            fs::copy(&cargo_toml, &original).map_err(|e| format!("Failed to save original Cargo.toml: {}", e))?;
             debug!("Saved original Cargo.toml to {:?}", original);
         }
     } else {
         // Restore from existing original (might be from interrupted run)
-        fs::copy(&original, &cargo_toml)
-            .map_err(|e| format!("Failed to restore Cargo.toml from original: {}", e))?;
+        fs::copy(&original, &cargo_toml).map_err(|e| format!("Failed to restore Cargo.toml from original: {}", e))?;
         debug!("Restored Cargo.toml from existing original backup in {:?}", staging_path);
     }
     Ok(())
@@ -222,19 +226,13 @@ impl CompileResult {
 
 /// Verify that the correct version of a dependency is being used
 /// Returns the actual version found, or None if not found
-fn verify_dependency_version(
-    crate_path: &Path,
-    dep_name: &str,
-) -> Option<String> {
+fn verify_dependency_version(crate_path: &Path, dep_name: &str) -> Option<String> {
     debug!("Verifying {} version in {:?}", dep_name, crate_path);
 
     // Try using cargo metadata which works better with path dependencies
     // Don't use --no-deps because we need to see resolved dependencies
-    let output = Command::new("cargo")
-        .args(&["metadata", "--format-version=1"])
-        .current_dir(crate_path)
-        .output()
-        .ok()?;
+    let output =
+        Command::new("cargo").args(&["metadata", "--format-version=1"]).current_dir(crate_path).output().ok()?;
     // if output.status.success() {
     //     let stdout = String::from_utf8_lossy(&output.stdout);
     //     if let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&stdout) {
@@ -346,24 +344,19 @@ fn apply_dependency_override(
     let override_path = if override_path.is_absolute() {
         override_path.to_path_buf()
     } else {
-        env::current_dir()
-            .map_err(|e| format!("Failed to get current dir: {}", e))?
-            .join(override_path)
+        env::current_dir().map_err(|e| format!("Failed to get current dir: {}", e))?.join(override_path)
     };
 
     let cargo_toml_path = crate_path.join("Cargo.toml");
     let mut content = String::new();
 
     // Read original Cargo.toml
-    let mut file = fs::File::open(&cargo_toml_path)
-        .map_err(|e| format!("Failed to open Cargo.toml: {}", e))?;
-    file.read_to_string(&mut content)
-        .map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
+    let mut file = fs::File::open(&cargo_toml_path).map_err(|e| format!("Failed to open Cargo.toml: {}", e))?;
+    file.read_to_string(&mut content).map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
     drop(file);
 
     // Parse as TOML
-    let mut doc: toml_edit::DocumentMut = content.parse()
-        .map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
+    let mut doc: toml_edit::DocumentMut = content.parse().map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
 
     match mode {
         DependencyOverrideMode::Force => {
@@ -410,10 +403,8 @@ fn apply_dependency_override(
     }
 
     // Write back
-    let mut file = fs::File::create(&cargo_toml_path)
-        .map_err(|e| format!("Failed to create Cargo.toml: {}", e))?;
-    file.write_all(doc.to_string().as_bytes())
-        .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
+    let mut file = fs::File::create(&cargo_toml_path).map_err(|e| format!("Failed to create Cargo.toml: {}", e))?;
+    file.write_all(doc.to_string().as_bytes()).map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
 
     Ok(())
 }
@@ -441,16 +432,10 @@ pub fn compile_crate(
         let override_path = if override_path.is_absolute() {
             override_path.to_path_buf()
         } else {
-            env::current_dir()
-                .map_err(|e| format!("Failed to get current dir: {}", e))?
-                .join(override_path)
+            env::current_dir().map_err(|e| format!("Failed to get current dir: {}", e))?.join(override_path)
         };
 
-        let config_str = format!(
-            "patch.crates-io.{}.path=\"{}\"",
-            crate_name,
-            override_path.display()
-        );
+        let config_str = format!("patch.crates-io.{}.path=\"{}\"", crate_name, override_path.display());
         cmd.arg("--config").arg(&config_str);
         debug!("using --config: {}", config_str);
     }
@@ -458,8 +443,7 @@ pub fn compile_crate(
     cmd.current_dir(crate_path);
 
     debug!("running cargo: {:?}", cmd);
-    let output = cmd.output()
-        .map_err(|e| format!("Failed to execute cargo: {}", e))?;
+    let output = cmd.output().map_err(|e| format!("Failed to execute cargo: {}", e))?;
 
     let duration = start.elapsed();
     let success = output.status.success();
@@ -471,22 +455,11 @@ pub fn compile_crate(
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
     // Parse diagnostics from JSON output (only for check/test, not fetch)
-    let diagnostics = if step != CompileStep::Fetch {
-        parse_cargo_json(&stdout)
-    } else {
-        Vec::new()
-    };
+    let diagnostics = if step != CompileStep::Fetch { parse_cargo_json(&stdout) } else { Vec::new() };
 
     debug!("parsed {} diagnostics", diagnostics.len());
 
-    Ok(CompileResult {
-        step,
-        success,
-        stdout,
-        stderr,
-        duration,
-        diagnostics,
-    })
+    Ok(CompileResult { step, success, stdout, stderr, duration, diagnostics })
 }
 
 /// Source of a version being tested
@@ -550,7 +523,7 @@ pub struct ThreeStepResult {
     /// Original requirement from dependent (e.g., "^0.8.52"), if known
     pub original_requirement: Option<String>,
     /// All versions of the tested crate found in the dependency tree (for multi-version scenarios)
-    pub all_crate_versions: Vec<(String, String, String)>,  // (spec, resolved_version, dependent_name)
+    pub all_crate_versions: Vec<(String, String, String)>, // (spec, resolved_version, dependent_name)
 }
 
 impl ThreeStepResult {
@@ -642,11 +615,14 @@ pub fn run_three_step_ict(
     expected_version: Option<String>,
     force_versions: bool,
     original_requirement: Option<String>,
-    dependent_name: Option<&str>,  // For failure logging
-    dependent_version: Option<&str>,  // For failure logging
-    test_label: Option<&str>,  // For failure logging: "baseline", "WIP", or version
+    dependent_name: Option<&str>,    // For failure logging
+    dependent_version: Option<&str>, // For failure logging
+    test_label: Option<&str>,        // For failure logging: "baseline", "WIP", or version
 ) -> Result<ThreeStepResult, String> {
-    debug!("running three-step ICT for {:?} (force={}, expected_version={:?})", crate_path, force_versions, expected_version);
+    debug!(
+        "running three-step ICT for {:?} (force={}, expected_version={:?})",
+        crate_path, force_versions, expected_version
+    );
 
     // Always restore Cargo.toml from original backup to prevent contamination
     restore_cargo_toml(crate_path)?;
@@ -655,8 +631,7 @@ pub fn run_three_step_ict(
     let lock_file = crate_path.join("Cargo.lock");
     if lock_file.exists() {
         debug!("Deleting Cargo.lock to force dependency resolution");
-        fs::remove_file(&lock_file)
-            .map_err(|e| format!("Failed to remove Cargo.lock: {}", e))?;
+        fs::remove_file(&lock_file).map_err(|e| format!("Failed to remove Cargo.lock: {}", e))?;
     }
 
     // Setup: Choose patching strategy based on mode
@@ -668,12 +643,7 @@ pub fn run_three_step_ict(
             // No backup needed - restore_cargo_toml already has .original saved
 
             // Replace dependency spec directly (bypasses semver)
-            apply_dependency_override(
-                crate_path,
-                base_crate_name,
-                override_path,
-                DependencyOverrideMode::Force,
-            )?;
+            apply_dependency_override(crate_path, base_crate_name, override_path, DependencyOverrideMode::Force)?;
 
             None // Don't use --config when we modified Cargo.toml
         } else {
@@ -681,9 +651,7 @@ pub fn run_three_step_ict(
             let abs_path = if override_path.is_absolute() {
                 override_path.to_path_buf()
             } else {
-                env::current_dir()
-                    .map_err(|e| format!("Failed to get current directory: {}", e))?
-                    .join(override_path)
+                env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))?.join(override_path)
             };
 
             debug!("Using --config for patch mode with override_path={:?}, abs_path={:?}", override_path, abs_path);
@@ -700,11 +668,7 @@ pub fn run_three_step_ict(
     let fetch = compile_crate(crate_path, CompileStep::Fetch, override_spec)?;
 
     // Verify the actual version after fetch
-    let actual_version = if fetch.success {
-        verify_dependency_version(crate_path, base_crate_name)
-    } else {
-        None
-    };
+    let actual_version = if fetch.success { verify_dependency_version(crate_path, base_crate_name) } else { None };
 
     if fetch.failed() {
         // Log failure with diagnostics
@@ -778,11 +742,7 @@ pub fn run_three_step_ict(
             None => true, // check was skipped, proceed
         };
 
-        if should_run {
-            Some(compile_crate(crate_path, CompileStep::Test, override_spec)?)
-        } else {
-            None
-        }
+        if should_run { Some(compile_crate(crate_path, CompileStep::Test, override_spec)?) } else { None }
     } else {
         None
     };
@@ -812,11 +772,8 @@ pub fn run_three_step_ict(
     debug!("Restored Cargo.toml to original state");
 
     // Extract all versions of the base crate from the dependency tree (if fetch succeeded)
-    let all_crate_versions = if fetch.success {
-        extract_all_crate_versions(crate_path, base_crate_name)
-    } else {
-        vec![]
-    };
+    let all_crate_versions =
+        if fetch.success { extract_all_crate_versions(crate_path, base_crate_name) } else { vec![] };
 
     Ok(ThreeStepResult {
         fetch,
@@ -838,16 +795,13 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
     debug!("extracting all versions of '{}' from cargo metadata", crate_name);
 
     // Run cargo metadata to get resolved dependencies
-    let output = match Command::new("cargo")
-        .args(&["metadata", "--format-version=1"])
-        .current_dir(crate_dir)
-        .output() {
-            Ok(o) => o,
-            Err(e) => {
-                debug!("failed to run cargo metadata: {}", e);
-                return all_versions;
-            }
-        };
+    let output = match Command::new("cargo").args(&["metadata", "--format-version=1"]).current_dir(crate_dir).output() {
+        Ok(o) => o,
+        Err(e) => {
+            debug!("failed to run cargo metadata: {}", e);
+            return all_versions;
+        }
+    };
 
     if !output.status.success() {
         debug!("cargo metadata exited with error status");
@@ -898,18 +852,25 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
                                     if let Some(at_pos) = pkg.rfind('@') {
                                         let resolved_version = pkg[at_pos + 1..].to_string();
                                         // Try to find the spec from dep_kinds
-                                        let spec = if let Some(dep_kinds) = dep.get("dep_kinds").and_then(|d| d.as_array()) {
-                                            if let Some(first_kind) = dep_kinds.first() {
-                                                first_kind.get("version").and_then(|v| v.as_str()).unwrap_or("*").to_string()
+                                        let spec =
+                                            if let Some(dep_kinds) = dep.get("dep_kinds").and_then(|d| d.as_array()) {
+                                                if let Some(first_kind) = dep_kinds.first() {
+                                                    first_kind
+                                                        .get("version")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or("*")
+                                                        .to_string()
+                                                } else {
+                                                    "*".to_string()
+                                                }
                                             } else {
                                                 "*".to_string()
-                                            }
-                                        } else {
-                                            "*".to_string()
-                                        };
+                                            };
 
-                                        debug!("      adding: spec='{}' resolved='{}' dependent='{}'",
-                                               spec, resolved_version, dependent_name);
+                                        debug!(
+                                            "      adding: spec='{}' resolved='{}' dependent='{}'",
+                                            spec, resolved_version, dependent_name
+                                        );
 
                                         all_versions.push((spec, resolved_version, dependent_name.clone()));
                                     }
@@ -932,8 +893,7 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
         // Multiple versions detected - log the surrounding JSON for debugging
         warn!("⚠️  Multiple versions of '{}' detected in dependency tree:", crate_name);
         for (spec, resolved, dependent) in &all_versions {
-            warn!("  {} requires {} → resolved to {} (via {})",
-                  dependent, spec, resolved, crate_name);
+            warn!("  {} requires {} → resolved to {} (via {})", dependent, spec, resolved, crate_name);
         }
 
         // Log the relevant JSON nodes to both console and failure log
@@ -952,11 +912,14 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
 
                                     // Also log to failure log file if initialized
                                     if let Some(ref log_path) = *FAILURE_LOG.lock().unwrap() {
-                                        if let Ok(mut file) = std::fs::OpenOptions::new()
-                                            .create(true)
-                                            .append(true)
-                                            .open(log_path) {
-                                            let _ = writeln!(file, "\n=== Multi-version detection for '{}' ===", crate_name);
+                                        if let Ok(mut file) =
+                                            std::fs::OpenOptions::new().create(true).append(true).open(log_path)
+                                        {
+                                            let _ = writeln!(
+                                                file,
+                                                "\n=== Multi-version detection for '{}' ===",
+                                                crate_name
+                                            );
                                             let _ = writeln!(file, "{}", node_json);
                                         }
                                     }
@@ -971,7 +934,6 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
 
     all_versions
 }
-
 
 #[cfg(test)]
 mod tests {

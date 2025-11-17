@@ -2,10 +2,9 @@
 ///
 /// This module provides functions for fetching reverse dependencies,
 /// resolving versions, and downloading crate files.
-
 use crates_io_api::SyncClient;
-use std::time::Duration;
 use log::debug;
+use std::time::Duration;
 
 const USER_AGENT: &str = "cargo-copter/0.1.1 (https://github.com/imazen/cargo-copter)";
 
@@ -36,10 +35,7 @@ pub struct ReverseDependency {
 /// # Arguments
 /// * `crate_name` - The crate to find reverse dependencies for
 /// * `limit` - Maximum number of dependents to return (default: all)
-pub fn get_reverse_dependencies(
-    crate_name: &str,
-    limit: Option<usize>,
-) -> Result<Vec<ReverseDependency>, String> {
+pub fn get_reverse_dependencies(crate_name: &str, limit: Option<usize>) -> Result<Vec<ReverseDependency>, String> {
     debug!("fetching reverse dependencies for {}", crate_name);
 
     let mut all_deps = Vec::new();
@@ -50,7 +46,7 @@ pub fn get_reverse_dependencies(
     // Determine how many pages we need
     let max_pages = match limit {
         Some(lim) => (lim + per_page - 1) / per_page, // Round up
-        None => 100, // Safety limit: don't fetch more than 10,000 deps
+        None => 100,                                  // Safety limit: don't fetch more than 10,000 deps
     };
 
     for page in 1..=max_pages {
@@ -92,11 +88,7 @@ pub fn get_reverse_dependencies(
         all_deps.truncate(lim);
     }
 
-    debug!(
-        "found {} reverse dependencies for {}",
-        all_deps.len(),
-        crate_name
-    );
+    debug!("found {} reverse dependencies for {}", all_deps.len(), crate_name);
 
     Ok(all_deps)
 }
@@ -106,13 +98,9 @@ pub fn get_reverse_dependencies(
 /// # Arguments
 /// * `crate_name` - The crate to find reverse dependencies for
 /// * `limit` - Number of top dependents to return
-pub fn get_top_dependents(
-    crate_name: &str,
-    limit: usize,
-) -> Result<Vec<ReverseDependency>, String> {
+pub fn get_top_dependents(crate_name: &str, limit: usize) -> Result<Vec<ReverseDependency>, String> {
     get_reverse_dependencies(crate_name, Some(limit))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -142,10 +130,7 @@ mod tests {
 
     #[test]
     fn test_reverse_dependency_structure() {
-        let dep = ReverseDependency {
-            name: "test-crate".to_string(),
-            downloads: 1000,
-        };
+        let dep = ReverseDependency { name: "test-crate".to_string(), downloads: 1000 };
         assert_eq!(dep.name, "test-crate");
         assert_eq!(dep.downloads, 1000);
     }
