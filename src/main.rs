@@ -900,10 +900,13 @@ impl TestResult {
                     // Filter out the primary dependency (only show subdependencies with different versions)
                     let primary_version = &primary.resolved_version;
                     let main_dependent_name = &self.rev_dep.name;
+                    // Normalize name for comparison (cargo uses hyphens, crates.io might use underscores)
+                    let normalized_main = main_dependent_name.replace('_', "-");
                     let transitive = outcome.result.all_crate_versions.iter()
                         .filter(|(_, resolved_version, dependent_name)| {
+                            let normalized_dep = dependent_name.replace('_', "-");
                             // Exclude: same version as primary, or from main dependent itself
-                            resolved_version != primary_version && dependent_name != main_dependent_name
+                            resolved_version != primary_version && normalized_dep != normalized_main
                         })
                         .map(|(spec, resolved_version, dependent_name)| {
                             TransitiveTest {
