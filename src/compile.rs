@@ -744,29 +744,40 @@ pub fn run_three_step_ict(
 fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String, String, String)> {
     let mut all_versions = Vec::new();
 
+    debug!("extracting all versions of '{}' from cargo metadata", crate_name);
+
     // Run cargo metadata to get resolved dependencies
     let output = match Command::new("cargo")
         .args(&["metadata", "--format-version=1"])
         .current_dir(crate_dir)
         .output() {
             Ok(o) => o,
-            Err(_) => return all_versions,
+            Err(e) => {
+                debug!("failed to run cargo metadata: {}", e);
+                return all_versions;
+            }
         };
 
     if !output.status.success() {
+        debug!("cargo metadata exited with error status");
         return all_versions;
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let metadata = match serde_json::from_str::<serde_json::Value>(&stdout) {
         Ok(m) => m,
-        Err(_) => return all_versions,
+        Err(e) => {
+            debug!("failed to parse cargo metadata JSON: {}", e);
+            return all_versions;
+        }
     };
 
     // Look through resolve.nodes for ALL instances of our crate
     if let Some(resolve) = metadata.get("resolve") {
         if let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array()) {
-            for node in nodes {
+            debug!("processing {} nodes from cargo metadata", nodes.len());
+
+            for (node_idx, node) in nodes.iter().enumerate() {
                 // Get the package name for this node (the dependent)
                 // node_id format: "registry+https://github.com/rust-lang/crates.io-index#package-name 1.0.0"
                 // or: "path+file:///path/to/crate#package-name 0.1.0"
@@ -781,11 +792,17 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
                     node_id.split_whitespace().next().unwrap_or("").to_string()
                 };
 
+                debug!("  node[{}]: id='{}' dependent='{}'", node_idx, node_id, dependent_name);
+
                 if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
-                    for dep in deps {
+                    for (dep_idx, dep) in deps.iter().enumerate() {
                         if let Some(name) = dep.get("name").and_then(|n| n.as_str()) {
                             if name == crate_name {
+                                debug!("    dep[{}]: found '{}'", dep_idx, crate_name);
+
                                 if let Some(pkg) = dep.get("pkg").and_then(|p| p.as_str()) {
+                                    debug!("      pkg: {}", pkg);
+
                                     // pkg format: "SOURCE#crate-name@version"
                                     if let Some(at_pos) = pkg.rfind('@') {
                                         let resolved_version = pkg[at_pos + 1..].to_string();
@@ -800,6 +817,9 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
                                             "*".to_string()
                                         };
 
+                                        debug!("      adding: spec='{}' resolved='{}' dependent='{}'",
+                                               spec, resolved_version, dependent_name);
+
                                         all_versions.push((spec, resolved_version, dependent_name.clone()));
                                     }
                                 }
@@ -810,6 +830,8 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
             }
         }
     }
+
+    debug!("extracted {} total version entries for '{}'", all_versions.len(), crate_name);
 
     all_versions
 }
