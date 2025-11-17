@@ -28,14 +28,12 @@ cargo test
 
 ## Core Data Structures
 
-See **[CONSOLE-FORMAT.md](CONSOLE-FORMAT.md)** for complete data structure definitions:
+Key structures (see `src/main.rs` and `src/report.rs`):
 - `OfferedRow` - Top-level row structure with baseline tracking
 - `DependencyRef` - Primary dependency metadata
 - `OfferedVersion` - Version being tested
 - `TestExecution` - Test command results (fetch/check/test)
-- `TransitiveTest` - Multi-version transitive dependencies
-
-Implementation: `src/main.rs` (lines 530-600)
+- `VersionTestOutcome` - Result of testing one version against one dependent
 
 ## Architecture
 
@@ -76,8 +74,6 @@ Five columns: **Offered | Spec | Resolved | Dependent | Result**
 - **Error deduplication**: Repeated errors show `[SAME ERROR]` instead of full text
 - **Multi-version rows**: Use `├─` prefixes in columns 2-4
 - **Separators**: Full horizontal line between different dependents
-
-See **[CONSOLE-FORMAT.md](CONSOLE-FORMAT.md)** for complete specification with 9 demo scenarios.
 
 ## Detailed Version Statistics
 
@@ -181,10 +177,10 @@ cargo-copter --error-lines 50 --top-dependents 5
 cargo-copter --error-lines 0 --top-dependents 5
 ```
 
-## Next Steps
+## Potential Improvements
 
-See [PLAN.md](PLAN.md) for remaining Phase 5+ work:
-- Extract original_requirement from dependent's Cargo.toml
-- Detect multi-version cargo tree scenarios
-- Live crates.io integration tests
-- Real-time console printing per dependent
+Ideas for future enhancements:
+- Extract original_requirement from dependent's Cargo.toml for more accurate Spec column
+- Detect multi-version cargo tree scenarios (transitive dependencies)
+- Live crates.io integration tests for CI/CD
+- Parallel testing with configurable job count
