@@ -134,6 +134,8 @@ Version: 0.8.52 (offered)
 --force-versions             # Bypass semver requirements
 --features <FEATURES>...     # Passed to cargo fetch/check/test
 --crate <NAME>               # Test published crate without local source
+--only-fetch                 # Only fetch dependencies (skip check and test)
+--only-check                 # Only fetch and check (skip tests)
 --clean                      # Purge staging directory before running tests
 --error-lines <N>            # Max lines to show per error (default: 10, 0=unlimited)
 ```
