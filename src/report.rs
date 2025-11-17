@@ -336,6 +336,12 @@ pub fn print_table_footer() {
 
 /// Extract error text from an OfferedRow for deduplication
 pub fn extract_error_text(row: &OfferedRow) -> Option<String> {
+    // Only extract error text from non-baseline rows that actually failed
+    // Don't track baseline errors for "still failing" comparison
+    if row.offered.is_none() {
+        return None;  // Skip baseline rows
+    }
+
     let formatted = format_offered_row(row);
     if formatted.error_details.is_empty() {
         None
