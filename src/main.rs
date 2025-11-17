@@ -284,11 +284,20 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
                 force_local = true;
             }
         } else {
-            // No local version (only --crate), add "latest" as final version
+            // No local version (only --crate), add "latest" as final version if not already present
             match resolve_latest_version(&config.crate_name, false) {
                 Ok(ver) => {
-                    debug!("No local version, adding latest: {}", ver);
-                    versions.push(compile::VersionSource::Published(ver));
+                    // Check if this version is already in the list
+                    let already_present = versions.iter().any(|v| {
+                        matches!(v, compile::VersionSource::Published(existing) if existing == &ver)
+                    });
+
+                    if !already_present {
+                        debug!("No local version, adding latest: {}", ver);
+                        versions.push(compile::VersionSource::Published(ver));
+                    } else {
+                        debug!("Latest version {} already in test list, skipping auto-add", ver);
+                    }
                 }
                 Err(e) => {
                     status(&format!("Warning: Failed to resolve latest version: {}", e));
