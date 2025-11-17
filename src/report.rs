@@ -375,14 +375,16 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: O
         }
     }
 
-    // Print multi-version rows with ├─ prefixes (if any)
+    // Print multi-version rows with ├─ prefixes (└─ for last row)
     if !formatted.multi_version_rows.is_empty() {
-        for (_i, (spec, resolved, dependent)) in formatted.multi_version_rows.iter().enumerate() {
-            let spec_display = format!("├─ {}", spec);
+        let last_idx = formatted.multi_version_rows.len() - 1;
+        for (i, (spec, resolved, dependent)) in formatted.multi_version_rows.iter().enumerate() {
+            let prefix = if i == last_idx { "└─" } else { "├─" };
+            let spec_display = format!("{} {}", prefix, spec);
             let spec_display = truncate_with_padding(&spec_display, w.spec - 2);
-            let resolved_display = format!("├─ {}", resolved);
+            let resolved_display = format!("{} {}", prefix, resolved);
             let resolved_display = truncate_with_padding(&resolved_display, w.resolved - 2);
-            let dependent_display = format!("├─ {}", dependent);
+            let dependent_display = format!("{} {}", prefix, dependent);
             let dependent_display = truncate_with_padding(&dependent_display, w.dependent - 2);
 
             println!("│{:width$}│ {} │ {} │ {} │{:w_result$}│",
@@ -979,14 +981,16 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
         }
     }
 
-    // Multi-version rows (if any)
+    // Multi-version rows (└─ for last row)
     if !formatted.multi_version_rows.is_empty() {
-        for (_i, (spec, resolved, dependent)) in formatted.multi_version_rows.iter().enumerate() {
-            let spec_display = format!("├─ {}", spec);
+        let last_idx = formatted.multi_version_rows.len() - 1;
+        for (i, (spec, resolved, dependent)) in formatted.multi_version_rows.iter().enumerate() {
+            let prefix = if i == last_idx { "└─" } else { "├─" };
+            let spec_display = format!("{} {}", prefix, spec);
             let spec_display = truncate_with_padding(&spec_display, w.spec - 2);
-            let resolved_display = format!("├─ {}", resolved);
+            let resolved_display = format!("{} {}", prefix, resolved);
             let resolved_display = truncate_with_padding(&resolved_display, w.resolved - 2);
-            let dependent_display = format!("├─ {}", dependent);
+            let dependent_display = format!("{} {}", prefix, dependent);
             let dependent_display = truncate_with_padding(&dependent_display, w.dependent - 2);
 
             output.push_str(&format!("│{:width$}│ {} │ {} │ {} │{:w_result$}│\n",
