@@ -521,6 +521,8 @@ pub struct ThreeStepResult {
     pub forced_version: bool,
     /// Original requirement from dependent (e.g., "^0.8.52"), if known
     pub original_requirement: Option<String>,
+    /// All versions of the tested crate found in the dependency tree (for multi-version scenarios)
+    pub all_crate_versions: Vec<(String, String, String)>,  // (spec, resolved_version, dependent_name)
 }
 
 impl ThreeStepResult {
@@ -707,6 +709,7 @@ pub fn run_three_step_ict(
             expected_version,
             forced_version: force_versions,
             original_requirement: original_requirement.clone(),
+            all_crate_versions: vec![],
         });
     }
 
@@ -737,6 +740,7 @@ pub fn run_three_step_ict(
                 expected_version: expected_version.clone(),
                 forced_version: force_versions,
                 original_requirement: original_requirement.clone(),
+                all_crate_versions: vec![],
             });
         }
         Some(result)
@@ -783,6 +787,13 @@ pub fn run_three_step_ict(
     restore_cargo_toml(crate_path).ok(); // Ignore errors on cleanup
     debug!("Restored Cargo.toml to original state");
 
+    // Extract all versions of the base crate from the dependency tree (if fetch succeeded)
+    let all_crate_versions = if fetch.success {
+        extract_all_crate_versions(crate_path, base_crate_name)
+    } else {
+        vec![]
+    };
+
     Ok(ThreeStepResult {
         fetch,
         check,
@@ -791,7 +802,83 @@ pub fn run_three_step_ict(
         expected_version,
         forced_version: force_versions,
         original_requirement,
+        all_crate_versions,
     })
+}
+
+/// Extract ALL versions of a crate from cargo metadata (for multi-version scenarios)
+/// Returns Vec<(spec, resolved_version, dependent_name)>
+fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String, String, String)> {
+    let mut all_versions = Vec::new();
+
+    // Run cargo metadata to get resolved dependencies
+    let output = match Command::new("cargo")
+        .args(&["metadata", "--format-version=1"])
+        .current_dir(crate_dir)
+        .output() {
+            Ok(o) => o,
+            Err(_) => return all_versions,
+        };
+
+    if !output.status.success() {
+        return all_versions;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let metadata = match serde_json::from_str::<serde_json::Value>(&stdout) {
+        Ok(m) => m,
+        Err(_) => return all_versions,
+    };
+
+    // Look through resolve.nodes for ALL instances of our crate
+    if let Some(resolve) = metadata.get("resolve") {
+        if let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array()) {
+            for node in nodes {
+                // Get the package name for this node (the dependent)
+                // node_id format: "registry+https://github.com/rust-lang/crates.io-index#package-name 1.0.0"
+                // or: "path+file:///path/to/crate#package-name 0.1.0"
+                let node_id = node.get("id").and_then(|i| i.as_str()).unwrap_or("");
+
+                // Extract just the package name after # and before the version
+                let dependent_name = if let Some(hash_pos) = node_id.find('#') {
+                    let after_hash = &node_id[hash_pos + 1..];
+                    // Split on whitespace to separate name from version
+                    after_hash.split_whitespace().next().unwrap_or("").to_string()
+                } else {
+                    node_id.split_whitespace().next().unwrap_or("").to_string()
+                };
+
+                if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
+                    for dep in deps {
+                        if let Some(name) = dep.get("name").and_then(|n| n.as_str()) {
+                            if name == crate_name {
+                                if let Some(pkg) = dep.get("pkg").and_then(|p| p.as_str()) {
+                                    // pkg format: "SOURCE#crate-name@version"
+                                    if let Some(at_pos) = pkg.rfind('@') {
+                                        let resolved_version = pkg[at_pos + 1..].to_string();
+                                        // Try to find the spec from dep_kinds
+                                        let spec = if let Some(dep_kinds) = dep.get("dep_kinds").and_then(|d| d.as_array()) {
+                                            if let Some(first_kind) = dep_kinds.first() {
+                                                first_kind.get("version").and_then(|v| v.as_str()).unwrap_or("*").to_string()
+                                            } else {
+                                                "*".to_string()
+                                            }
+                                        } else {
+                                            "*".to_string()
+                                        };
+
+                                        all_versions.push((spec, resolved_version, dependent_name.clone()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    all_versions
 }
 
 

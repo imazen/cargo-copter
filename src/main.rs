@@ -941,12 +941,32 @@ impl TestResult {
                         ));
                     }
 
+                    // Convert all_crate_versions to TransitiveTest entries
+                    // Filter out the primary dependency (only show additional/different versions)
+                    let primary_version = &primary.resolved_version;
+                    let transitive = outcome.result.all_crate_versions.iter()
+                        .filter(|(_, resolved_version, _)| resolved_version != primary_version)
+                        .map(|(spec, resolved_version, dependent_name)| {
+                            TransitiveTest {
+                                dependency: DependencyRef {
+                                    dependent_name: dependent_name.clone(),
+                                    dependent_version: String::new(),  // Not available from cargo tree
+                                    spec: spec.clone(),
+                                    resolved_version: resolved_version.clone(),
+                                    resolved_source: VersionSource::CratesIo,  // Assume crates.io for now
+                                    used_offered_version: false,  // Determine based on version match
+                                },
+                                depth: 1,  // All are depth 1 for simplicity
+                            }
+                        })
+                        .collect();
+
                     rows.push(OfferedRow {
                         baseline_passed,
                         primary,
                         offered,
                         test: TestExecution { commands },
-                        transitive: vec![],  // TODO: extract from cargo tree
+                        transitive,
                     });
                 }
 
@@ -1395,6 +1415,7 @@ fn run_multi_version_test(
                             expected_version: Some(version.to_string()),
                             forced_version: is_forced,
                             original_requirement: original_requirement.clone(),
+                            all_crate_versions: vec![],
                         };
                         outcomes.push(VersionTestOutcome {
                             version_source: version_source.clone(),
