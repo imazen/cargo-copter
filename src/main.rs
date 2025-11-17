@@ -226,16 +226,20 @@ fn format_test_plan(
 }
 
 fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
-    // Initialize failure log and clear any previous contents
+    // Initialize failure logs and clear any previous contents
     let log_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join("copter-failures.log");
+    let build_log_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join("copter-build-failures.log");
 
-    // Truncate/clear the log file if it exists
+    // Truncate/clear the log files if they exist
     if log_path.exists() {
         let _ = std::fs::write(&log_path, ""); // Clear file contents
     }
+    if build_log_path.exists() {
+        let _ = std::fs::write(&build_log_path, ""); // Clear file contents
+    }
 
     compile::init_failure_log(log_path.clone());
-    debug!("Failure log initialized at: {:?}", log_path);
+    debug!("Failure logs initialized at: {:?} and {:?}", log_path, build_log_path);
 
     // Phase 5: Check if we're doing multi-version testing
     let use_multi_version = !args.test_versions.is_empty() || !args.force_versions.is_empty();
@@ -503,9 +507,10 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
     // Exit with error code if there were regressions
     let summary = report::summarize_offered_rows(&all_rows);
 
-    // Show failure log path if there were any failures
+    // Show failure log paths if there were any failures
     if summary.regressed > 0 || summary.broken > 0 {
         println!("\nDetailed failure logs: {}", log_path.display());
+        println!("Build failures only: {}", build_log_path.display());
     }
 
     // Check for skipped (non-forced) versions and suggest --force-versions

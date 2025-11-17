@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 // Failure log file path
 lazy_static! {
     static ref FAILURE_LOG: Mutex<Option<PathBuf>> = Mutex::new(None);
+    static ref BUILD_FAILURE_LOG: Mutex<Option<PathBuf>> = Mutex::new(None);
     // Track last error signature for deduplication
     static ref LAST_ERROR_SIGNATURE: Mutex<Option<String>> = Mutex::new(None);
 }
@@ -21,7 +22,13 @@ lazy_static! {
 /// Initialize the failure log file
 pub fn init_failure_log(log_path: PathBuf) {
     let mut log = FAILURE_LOG.lock().unwrap();
-    *log = Some(log_path);
+    *log = Some(log_path.clone());
+
+    // Also initialize build-only log
+    let build_log_path = log_path.with_file_name("copter-build-failures.log");
+    let mut build_log = BUILD_FAILURE_LOG.lock().unwrap();
+    *build_log = Some(build_log_path);
+
     // Clear the error signature when initializing
     let mut sig = LAST_ERROR_SIGNATURE.lock().unwrap();
     *sig = None;
@@ -63,13 +70,18 @@ pub fn log_failure_with_diagnostics(
     stderr: &str,
     diagnostics: &[Diagnostic],
 ) {
-    let log_path = {
+    let (log_path, build_log_path) = {
         let log = FAILURE_LOG.lock().unwrap();
-        match &*log {
-            Some(path) => path.clone(),
-            None => return, // Logging not initialized
+        let build_log = BUILD_FAILURE_LOG.lock().unwrap();
+        match (&*log, &*build_log) {
+            (Some(path), Some(build_path)) => (path.clone(), Some(build_path.clone())),
+            (Some(path), None) => (path.clone(), None),
+            _ => return, // Logging not initialized
         }
     };
+
+    // Determine if this is a build/check failure (not a test failure)
+    let is_build_failure = command.contains("cargo fetch") || command.contains("cargo check");
 
     // Open file with append mode
     let file = match OpenOptions::new().create(true).append(true).open(&log_path) {
@@ -153,7 +165,98 @@ pub fn log_failure_with_diagnostics(
 
     let _ = writer.flush();
 
+    // If this is a build failure, also write to build-specific log
+    if is_build_failure {
+        if let Some(build_path) = build_log_path {
+            write_failure_to_log(
+                &build_path,
+                dependent,
+                dependent_version,
+                base_crate,
+                test_label,
+                command,
+                exit_code,
+                stderr,
+                diagnostics,
+                is_duplicate,
+            );
+        }
+    }
+
     // Unlock is automatic when file goes out of scope
+}
+
+/// Helper function to write a failure entry to a specific log file
+fn write_failure_to_log(
+    log_path: &Path,
+    dependent: &str,
+    dependent_version: &str,
+    base_crate: &str,
+    test_label: &str,
+    command: &str,
+    exit_code: Option<i32>,
+    stderr: &str,
+    diagnostics: &[Diagnostic],
+    is_duplicate: bool,
+) {
+    // Open file with append mode
+    let file = match OpenOptions::new().create(true).append(true).open(log_path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open build failure log: {}", e);
+            return;
+        }
+    };
+
+    // Lock the file for exclusive write access
+    if let Err(e) = file.lock_exclusive() {
+        eprintln!("Failed to lock build failure log: {}", e);
+        return;
+    }
+
+    let mut writer = BufWriter::new(&file);
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+    let exit_str = exit_code.map(|c| c.to_string()).unwrap_or_else(|| "N/A".to_string());
+
+    let _ = writeln!(writer, "\n{}", "=".repeat(100));
+    let _ = writeln!(
+        writer,
+        "[{}] BUILD FAILURE: {} {} testing {} {}",
+        timestamp, dependent, dependent_version, base_crate, test_label
+    );
+    let _ = writeln!(writer, "{}", "=".repeat(100));
+    let _ = writeln!(writer, "Command: {}", command);
+    let _ = writeln!(writer, "Exit code: {}", exit_str);
+
+    if is_duplicate {
+        let _ = writeln!(writer, "\n--- SAME FAILURE AS PREVIOUS ---");
+    } else if !diagnostics.is_empty() {
+        let _ = writeln!(writer, "\n--- ERRORS ---");
+        for (idx, diag) in diagnostics.iter().enumerate() {
+            let level_str = match diag.level {
+                crate::error_extract::DiagnosticLevel::Error => "error",
+                crate::error_extract::DiagnosticLevel::Warning => "warning",
+                crate::error_extract::DiagnosticLevel::Help => "help",
+                crate::error_extract::DiagnosticLevel::Note => "note",
+                crate::error_extract::DiagnosticLevel::Other(ref s) => s.as_str(),
+            };
+            let _ = writeln!(writer, "\n{}. [{}] {}", idx + 1, level_str, diag.message);
+
+            if !diag.rendered.is_empty() {
+                let _ = writeln!(writer, "{}", diag.rendered);
+            }
+        }
+    } else {
+        let _ = writeln!(writer, "\n--- STDERR (no structured errors) ---");
+        for line in stderr.lines() {
+            if !line.trim_start().starts_with('{') {
+                let _ = writeln!(writer, "{}", line);
+            }
+        }
+    }
+
+    let _ = writeln!(writer, "\n{}", "=".repeat(100));
+    let _ = writer.flush();
 }
 
 /// Restore Cargo.toml from the original backup before testing
