@@ -401,14 +401,24 @@ fn format_offered_row(row: &OfferedRow) -> FormattedRow {
     // Format Dependent column
     let dependent_str = format!("{} {}", row.primary.dependent_name, row.primary.dependent_version);
 
-    // Format Result column
+    // Determine which step failed (if any)
     let overall_passed = row.test.commands.iter().all(|cmd| cmd.result.passed);
-    let result_status = match (row.baseline_passed, overall_passed) {
-        (Some(true), true) => "PASSED",
-        (Some(true), false) => "REGRESSED",
-        (Some(false), _) => "BROKEN",
-        (None, true) => "PASSED",
-        (None, false) => "FAILED",
+    let failed_step = row.test.commands.iter()
+        .find(|cmd| !cmd.result.passed)
+        .map(|cmd| match cmd.command {
+            CommandType::Fetch => "fetch failed",
+            CommandType::Check => "build failed",
+            CommandType::Test => "test failed",
+        });
+
+    let result_status = match (row.baseline_passed, overall_passed, failed_step) {
+        (Some(true), true, _) => "passed".to_string(),
+        (Some(true), false, Some(step)) => step.to_string(),
+        (Some(true), false, None) => "regressed".to_string(),
+        (Some(false), _, _) => "broken".to_string(),
+        (None, true, _) => "passed".to_string(),
+        (None, false, Some(step)) => step.to_string(),
+        (None, false, None) => "failed".to_string(),
     };
 
     // Format ICT marks
