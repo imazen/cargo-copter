@@ -64,6 +64,10 @@ pub struct CliArgs {
     /// These versions are tested even if they don't satisfy dependent's requirements
     #[arg(long, value_name = "VERSION", num_args = 0..)]
     pub force_versions: Vec<String>,
+
+    /// Clean staging directory before running tests (purges all cached builds)
+    #[arg(long)]
+    pub clean: bool,
 }
 
 impl CliArgs {
@@ -149,6 +153,7 @@ mod tests {
             no_check: true,
             no_test: true,
             json: false,
+            clean: false,
         };
         assert!(args.validate().is_err());
     }
@@ -169,6 +174,7 @@ mod tests {
             no_check: false,
             no_test: false,
             json: false,
+            clean: false,
         };
         assert!(args.validate().is_err());
     }
@@ -192,6 +198,7 @@ mod tests {
             no_check: false,
             no_test: false,
             json: false,
+            clean: false,
         };
         let result = args.validate();
         std::fs::remove_file("./Cargo.toml.test").ok();
@@ -214,6 +221,7 @@ mod tests {
             no_check: false,
             no_test: false,
             json: false,
+            clean: false,
         };
         assert!(args.is_offline_mode());
     }
@@ -234,6 +242,7 @@ mod tests {
             no_check: false,
             no_test: false,
             json: false,
+            clean: false,
         };
         assert!(!args.is_offline_mode());
     }

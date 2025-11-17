@@ -55,6 +55,20 @@ fn main() {
         std::process::exit(1);
     }
 
+    // Clean staging directory if requested
+    if args.clean {
+        if args.staging_dir.exists() {
+            match fs::remove_dir_all(&args.staging_dir) {
+                Ok(_) => {
+                    println!("Cleaned staging directory: {}", args.staging_dir.display());
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to clean staging directory: {}", e);
+                }
+            }
+        }
+    }
+
     // Get config
     let config = match get_config(&args) {
         Ok(c) => c,
