@@ -9,7 +9,7 @@
 /// Console rendering is handled by the console_format module.
 
 use crate::console_format::{self, ComparisonStats};
-use crate::{CommandType, OfferedRow, VersionSource};
+use crate::types::{CommandType, OfferedRow, VersionSource};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
