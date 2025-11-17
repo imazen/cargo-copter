@@ -1,0 +1,10 @@
+[package]
+name = "dependent-test-passing"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+base-crate = { path = "../base-crate-v1" }
+
+[lib]
+path = "src/lib.rs"

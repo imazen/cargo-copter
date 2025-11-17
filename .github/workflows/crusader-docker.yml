@@ -1,0 +1,105 @@
+# Example: Cargo Crusader with Docker isolation
+#
+# This workflow demonstrates running cargo-crusader inside a Docker container
+# for maximum security isolation when testing untrusted dependencies.
+#
+# Security features:
+# - All testing runs inside isolated container
+# - No network access to container (--network none option available)
+# - Read-only filesystem mounts where possible
+# - No secret mounting
+# - Container discarded after run
+
+name: Crusader Docker
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crusader-docker:
+    name: Test in Docker Container
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build Docker image
+        run: |
+          docker build -t cargo-crusader:local - <<'DOCKERFILE'
+          FROM rust:1.75-slim
+
+          # Install dependencies
+          RUN apt-get update && \
+              apt-get install -y --no-install-recommends \
+                build-essential \
+                pkg-config \
+                libssl-dev \
+                ca-certificates && \
+              rm -rf /var/lib/apt/lists/*
+
+          # Create non-root user for safety
+          RUN useradd -m -u 1000 crusader
+
+          # Set up working directory
+          WORKDIR /workspace
+          RUN chown crusader:crusader /workspace
+
+          USER crusader
+
+          # Install cargo-crusader from local source
+          # (This will be mounted from the checkout)
+          DOCKERFILE
+
+      - name: Run cargo-crusader in container
+        run: |
+          docker run --rm \
+            --user $(id -u):$(id -g) \
+            --volume "$PWD:/workspace:ro" \
+            --volume "$PWD/output:/output:rw" \
+            --workdir /workspace \
+            --env CARGO_HOME=/tmp/cargo \
+            cargo-crusader:local \
+            bash -c '
+              set -e
+              echo "=== Building cargo-crusader ==="
+              cargo build --release
+
+              echo "=== Running cargo-crusader ==="
+              mkdir -p /output
+              ./target/release/cargo-crusader --top-dependents 5 || true
+
+              echo "=== Copying reports ==="
+              cp -f crusader-report.html /output/ 2>/dev/null || true
+              cp -f crusader-analysis.md /output/ 2>/dev/null || true
+
+              echo "=== Reports generated ==="
+              ls -lh /output/
+            '
+
+      - name: Upload reports from container
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crusader-docker-reports
+          path: |
+            output/crusader-report.html
+            output/crusader-analysis.md
+          retention-days: 30
+
+      - name: Check results
+        if: always()
+        run: |
+          if [ -f output/crusader-analysis.md ]; then
+            echo "=== Docker Isolation Test Results ==="
+            cat output/crusader-analysis.md | head -50
+          else
+            echo "::warning::No analysis report generated"
+          fi

@@ -1,0 +1,63 @@
+[package]
+name = "rgb"
+version = "0.8.91" # this must be set to stable, because Cargo won't unify 0.8.90-alpha with 0.8.0
+authors = ["Kornel Lesiński <kornel@geekhood.net>", "James Forster <james.forsterer@gmail.com>"]
+include = ["src/**/*", "Cargo.toml", "README.md", "examples/*.rs", "LICENSE"]
+description = "`struct RGB/RGBA/etc.` for sharing pixels between crates + convenience methods for color manipulation.\nAllows no-copy high-level interoperability. Also adds common convenience methods and implements standard Rust traits to make `RGB`/`RGBA` pixels and slices first-class Rust objects."
+documentation = "https://docs.rs/rgb"
+repository = "https://github.com/kornelski/rust-rgb"
+homepage = "https://lib.rs/crates/rgb"
+readme = "README.md"
+keywords = ["rgb", "rgba", "bgra", "pixel", "color"]
+license = "MIT"
+categories = ["graphics", "rust-patterns", "multimedia::images"]
+edition = "2021"
+rust-version = "1.64"
+
+[features]
+# Since all pixel formats are enabled by default, because it has negligible impact on compilation time
+default = ["grb", "argb", "as-bytes"]
+
+# Implements some of the traits, see `rgb::num_traits` module for details.
+num-traits = ["dep:num-traits"]
+# Support for the `defmt` crate
+defmt-03 = ["dep:defmt"]
+serde = ["dep:serde"]
+bytemuck = ["dep:bytemuck"]
+
+# Deprecated: it's always enabled anyway
+argb = []
+# Deprecated: it's always enabled anyway
+grb = []
+# Deprecated: use `num-traits` feature instead, and import `rgb::num_traits::*`
+checked_fns = []
+# Deprecated: use `bytemuck` feature instead, and use `rgb::bytemuck::*`
+as-bytes = ["bytemuck"]
+
+# Enable for `cast_vec()`. Disable for no-std support.
+std = ["bytemuck?/extern_crate_alloc"]
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[dependencies]
+serde = { version = "1.0.200", optional = true, default-features = false, features = ["derive"] }
+bytemuck = { version = "1.17", optional = true, features = ["min_const_generics", "align_offset"] } # these give better code
+defmt = { version = "0.3.8", optional = true, default-features = false }
+num-traits = { version = "0.2.19", optional = true, default-features = false }
+
+[dev-dependencies]
+serde_json = "1.0.100"
+
+[[example]]
+name = "serde"
+required-features = ["serde"]
+
+[[example]]
+name = "example"
+required-features = []
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+features = ["bytemuck", "serde", "num-traits"]
+rustdoc-args = ["--generate-link-to-definition"]

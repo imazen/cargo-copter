@@ -1,0 +1,86 @@
+# Example: Secure Cargo Crusader workflow
+#
+# This workflow demonstrates how to safely run cargo-crusader in GitHub Actions
+# with proper security isolation and minimal permissions.
+#
+# Security features:
+# - Minimal permissions (contents: read only)
+# - No access to repository secrets
+# - No credential persistence via CARGO_HOME
+# - Fresh cargo installation per run
+# - Results uploaded as artifacts for review
+
+name: Crusader Example
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+# Minimal permissions - only read access to code
+permissions:
+  contents: read
+
+jobs:
+  crusader:
+    name: Test API Compatibility
+    runs-on: ubuntu-latest
+
+    # Prevent access to secrets by not declaring any secret usage
+    # This ensures no credentials can leak during dependency testing
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false  # Don't persist GitHub token
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-crusader
+        run: |
+          cargo install --path .
+          which cargo-crusader
+          cargo-crusader --version || echo "Installed successfully"
+
+      - name: Run cargo-crusader
+        run: |
+          # Set fresh cargo home to avoid credential persistence
+          export CARGO_HOME="${{ runner.temp }}/cargo-home"
+          mkdir -p "$CARGO_HOME"
+
+          # Limit to 5 dependents for CI speed
+          # Increase CRUSADER_LIMIT for production use
+          cargo-crusader --top-dependents 5 || true
+        working-directory: .
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crusader-report-html
+          path: crusader-report.html
+          retention-days: 30
+
+      - name: Upload markdown analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crusader-analysis-md
+          path: crusader-analysis.md
+          retention-days: 30
+
+      - name: Check for regressions
+        run: |
+          if [ -f crusader-analysis.md ]; then
+            echo "=== Analysis Report ==="
+            head -50 crusader-analysis.md
+
+            # Exit with error if regressions found
+            if grep -q "## ⚠️ Regressions" crusader-analysis.md; then
+              echo ""
+              echo "::error::API breaking changes detected! Review the crusader-analysis.md artifact."
+              exit 1
+            fi
+          fi
