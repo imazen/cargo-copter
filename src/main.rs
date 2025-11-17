@@ -1472,19 +1472,22 @@ fn run_multi_version_test(
             }
         };
 
-        match compile::run_three_step_ict(
-            &staging_path,
-            &config.crate_name,
-            override_path.as_deref(),
-            skip_check,
-            skip_test,
-            expected_version,
-            is_forced,
-            original_requirement.clone(),
-            Some(&rev_dep.name),
-            Some(&rev_dep.vers.to_string()),
-            Some(&test_label),
-        ) {
+        let dependent_version_str = rev_dep.vers.to_string();
+        let test_config = compile::TestConfig::new(&staging_path, &config.crate_name)
+            .with_skip_flags(skip_check, skip_test)
+            .with_version_info(expected_version, is_forced, original_requirement.clone())
+            .with_logging_info(
+                Some(compile::DependentInfo { name: &rev_dep.name, version: &dependent_version_str }),
+                Some(&test_label),
+            );
+
+        let test_config = if let Some(ref override_path_ref) = override_path {
+            test_config.with_override_path(override_path_ref)
+        } else {
+            test_config
+        };
+
+        match compile::run_three_step_ict(test_config) {
             Ok(result) => {
                 // Version mismatch is shown in table with [≠→!] suffix, no need for separate warning
                 if let (Some(expected), Some(actual)) = (&result.expected_version, &result.actual_version) {

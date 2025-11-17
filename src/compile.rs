@@ -624,33 +624,109 @@ impl ThreeStepResult {
     }
 }
 
+/// Information about the dependent crate for logging
+#[derive(Debug, Clone)]
+pub struct DependentInfo<'a> {
+    pub name: &'a str,
+    pub version: &'a str,
+}
+
+/// Configuration for three-step ICT testing
+#[derive(Debug, Clone)]
+pub struct TestConfig<'a> {
+    /// Path to the dependent crate being tested
+    pub crate_path: &'a Path,
+    /// Name of the base crate being overridden (e.g., "rgb")
+    pub base_crate_name: &'a str,
+    /// Optional path to override the dependency with
+    pub override_path: Option<&'a Path>,
+    /// Skip cargo check step
+    pub skip_check: bool,
+    /// Skip cargo test step
+    pub skip_test: bool,
+    /// Expected version to verify after fetch
+    pub expected_version: Option<String>,
+    /// Force version (bypass semver requirements)
+    pub force_versions: bool,
+    /// Original requirement from dependent's Cargo.toml
+    pub original_requirement: Option<String>,
+    /// Information about the dependent for logging
+    pub dependent_info: Option<DependentInfo<'a>>,
+    /// Test label for logging ("baseline", "WIP", or version)
+    pub test_label: Option<&'a str>,
+}
+
+impl<'a> TestConfig<'a> {
+    /// Create a new test configuration
+    pub fn new(crate_path: &'a Path, base_crate_name: &'a str) -> Self {
+        Self {
+            crate_path,
+            base_crate_name,
+            override_path: None,
+            skip_check: false,
+            skip_test: false,
+            expected_version: None,
+            force_versions: false,
+            original_requirement: None,
+            dependent_info: None,
+            test_label: None,
+        }
+    }
+
+    /// Set the override path (builder pattern)
+    pub fn with_override_path(mut self, path: &'a Path) -> Self {
+        self.override_path = Some(path);
+        self
+    }
+
+    /// Set skip flags (builder pattern)
+    pub fn with_skip_flags(mut self, skip_check: bool, skip_test: bool) -> Self {
+        self.skip_check = skip_check;
+        self.skip_test = skip_test;
+        self
+    }
+
+    /// Set version information (builder pattern)
+    pub fn with_version_info(
+        mut self,
+        expected_version: Option<String>,
+        force_versions: bool,
+        original_requirement: Option<String>,
+    ) -> Self {
+        self.expected_version = expected_version;
+        self.force_versions = force_versions;
+        self.original_requirement = original_requirement;
+        self
+    }
+
+    /// Set logging information (builder pattern)
+    pub fn with_logging_info(mut self, dependent_info: Option<DependentInfo<'a>>, test_label: Option<&'a str>) -> Self {
+        self.dependent_info = dependent_info;
+        self.test_label = test_label;
+        self
+    }
+}
+
 /// Run three-step ICT (Install/Check/Test) test with early stopping
-///
-/// # Arguments
-/// * `crate_path` - Path to the dependent crate
-/// * `base_crate_name` - Name of the crate being overridden (e.g., "rgb")
-/// * `override_path` - Optional path to override a dependency (None for published baseline)
-/// * `skip_check` - Skip cargo check step
-/// * `skip_test` - Skip cargo test step
 ///
 /// # Returns
 /// ThreeStepResult with cumulative early stopping:
 /// - Fetch always runs
 /// - Check only runs if fetch succeeds (and !skip_check)
 /// - Test only runs if check succeeds (and !skip_test)
-pub fn run_three_step_ict(
-    crate_path: &Path,
-    base_crate_name: &str,
-    override_path: Option<&Path>,
-    skip_check: bool,
-    skip_test: bool,
-    expected_version: Option<String>,
-    force_versions: bool,
-    original_requirement: Option<String>,
-    dependent_name: Option<&str>,    // For failure logging
-    dependent_version: Option<&str>, // For failure logging
-    test_label: Option<&str>,        // For failure logging: "baseline", "WIP", or version
-) -> Result<ThreeStepResult, String> {
+pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String> {
+    let TestConfig {
+        crate_path,
+        base_crate_name,
+        override_path,
+        skip_check,
+        skip_test,
+        expected_version,
+        force_versions,
+        original_requirement,
+        dependent_info,
+        test_label,
+    } = config;
     debug!(
         "running three-step ICT for {:?} (force={}, expected_version={:?})",
         crate_path, force_versions, expected_version
@@ -704,10 +780,10 @@ pub fn run_three_step_ict(
 
     if fetch.failed() {
         // Log failure with diagnostics
-        if let (Some(dep_name), Some(dep_ver), Some(label)) = (dependent_name, dependent_version, test_label) {
+        if let (Some(ref dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
             log_failure_with_diagnostics(
-                dep_name,
-                dep_ver,
+                dep_info.name,
+                dep_info.version,
                 base_crate_name,
                 label,
                 &format!("cargo fetch"),
@@ -736,10 +812,10 @@ pub fn run_three_step_ict(
         let result = compile_crate(crate_path, CompileStep::Check, override_spec)?;
         if result.failed() {
             // Log failure with diagnostics
-            if let (Some(dep_name), Some(dep_ver), Some(label)) = (dependent_name, dependent_version, test_label) {
+            if let (Some(ref dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
                 log_failure_with_diagnostics(
-                    dep_name,
-                    dep_ver,
+                    dep_info.name,
+                    dep_info.version,
                     base_crate_name,
                     label,
                     &format!("cargo check"),
@@ -782,10 +858,10 @@ pub fn run_three_step_ict(
     // Log test failure if test failed
     if let Some(ref test_result) = test {
         if test_result.failed() {
-            if let (Some(dep_name), Some(dep_ver), Some(label)) = (dependent_name, dependent_version, test_label) {
+            if let (Some(ref dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
                 log_failure_with_diagnostics(
-                    dep_name,
-                    dep_ver,
+                    dep_info.name,
+                    dep_info.version,
                     base_crate_name,
                     label,
                     &format!("cargo test"),
