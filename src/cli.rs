@@ -72,6 +72,11 @@ pub struct CliArgs {
     /// Number of error lines to show for compilation failures (default: 10)
     #[arg(long, default_value = "10")]
     pub error_lines: usize,
+
+    /// Skip auto-inserting normal (non-forced) tests for force-versions
+    /// By default, each forced version is also tested in normal patch mode
+    #[arg(long)]
+    pub skip_normal_testing: bool,
 }
 
 impl CliArgs {
@@ -153,6 +158,7 @@ mod tests {
             json: false,
             clean: false,
             error_lines: 10,
+            skip_normal_testing: false,
         };
         assert!(args.validate().is_err());
     }
@@ -175,6 +181,7 @@ mod tests {
             json: false,
             clean: false,
             error_lines: 10,
+            skip_normal_testing: false,
         };
         assert!(args.validate().is_err());
     }
@@ -200,6 +207,7 @@ mod tests {
             json: false,
             clean: false,
             error_lines: 10,
+            skip_normal_testing: false,
         };
         let result = args.validate();
         std::fs::remove_file("./Cargo.toml.test").ok();

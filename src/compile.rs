@@ -426,21 +426,42 @@ pub fn compile_crate(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VersionSource {
     /// Published version from crates.io
-    Published(String),
+    Published { version: String, forced: bool },
     /// Local work-in-progress version ("this")
-    Local(PathBuf),
+    Local { path: PathBuf, forced: bool },
 }
 
 impl VersionSource {
     pub fn label(&self) -> String {
         match self {
-            VersionSource::Published(v) => v.clone(),
-            VersionSource::Local(_) => "this".to_string(),
+            VersionSource::Published { version, .. } => version.clone(),
+            VersionSource::Local { .. } => "this".to_string(),
         }
     }
 
     pub fn is_local(&self) -> bool {
-        matches!(self, VersionSource::Local(_))
+        matches!(self, VersionSource::Local { .. })
+    }
+
+    pub fn is_forced(&self) -> bool {
+        match self {
+            VersionSource::Published { forced, .. } => *forced,
+            VersionSource::Local { forced, .. } => *forced,
+        }
+    }
+
+    pub fn version_string(&self) -> Option<String> {
+        match self {
+            VersionSource::Published { version, .. } => Some(version.clone()),
+            VersionSource::Local { .. } => None,
+        }
+    }
+
+    pub fn path(&self) -> Option<&PathBuf> {
+        match self {
+            VersionSource::Published { .. } => None,
+            VersionSource::Local { path, .. } => Some(path),
+        }
     }
 }
 

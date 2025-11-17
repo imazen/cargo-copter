@@ -49,7 +49,10 @@ fn resolve_version_keyword(
             // User explicitly requested WIP version
             if let Some(manifest_path) = local_manifest {
                 debug!("Resolved 'this' to local WIP at {:?}", manifest_path);
-                Ok(Some(compile::VersionSource::Local(manifest_path.clone())))
+                Ok(Some(compile::VersionSource::Local {
+                    path: manifest_path.clone(),
+                    forced: false
+                }))
             } else {
                 status("Warning: 'this' specified but no local source available (--path or --crate)");
                 Ok(None)
@@ -60,7 +63,10 @@ fn resolve_version_keyword(
             match resolve_latest_version(crate_name, false) {
                 Ok(ver) => {
                     debug!("Resolved 'latest' to {}", ver);
-                    Ok(Some(compile::VersionSource::Published(ver)))
+                    Ok(Some(compile::VersionSource::Published {
+                        version: ver,
+                        forced: false
+                    }))
                 }
                 Err(e) => {
                     status(&format!("Warning: Failed to resolve 'latest': {}", e));
@@ -73,7 +79,10 @@ fn resolve_version_keyword(
             match resolve_latest_version(crate_name, true) {
                 Ok(ver) => {
                     debug!("Resolved '{}' to {}", version_str, ver);
-                    Ok(Some(compile::VersionSource::Published(ver)))
+                    Ok(Some(compile::VersionSource::Published {
+                        version: ver,
+                        forced: false
+                    }))
                 }
                 Err(e) => {
                     status(&format!("Warning: Failed to resolve '{}': {}", version_str, e));
@@ -94,7 +103,10 @@ fn resolve_version_keyword(
             Version::parse(version_str)?;
 
             // Literal version string (supports hyphens like "0.8.2-alpha2")
-            Ok(Some(compile::VersionSource::Published(version_str.to_string())))
+            Ok(Some(compile::VersionSource::Published {
+                version: version_str.to_string(),
+                forced: false
+            }))
         }
     }
 }
@@ -173,10 +185,10 @@ fn print_test_plan(
 
     for version in versions {
         let (version_str, is_forced) = match version {
-            compile::VersionSource::Published(v) => {
+            compile::VersionSource::Published { version: v, .. } => {
                 (v.clone(), force_versions.contains(v))
             }
-            compile::VersionSource::Local(_) => {
+            compile::VersionSource::Local { .. } => {
                 ("this".to_string(), force_local)
             }
         };
@@ -262,10 +274,62 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
             }
         }
 
-        // Add versions from --force-versions (these will be marked as forced in run_multi_version_test)
+        // Add versions from --force-versions and mark them as forced
         for ver_str in &args.force_versions {
-            if let Some(version_source) = resolve_version_keyword(ver_str, &config.crate_name, local_manifest)? {
+            if let Some(mut version_source) = resolve_version_keyword(ver_str, &config.crate_name, local_manifest)? {
+                // Mark this version as forced
+                match &mut version_source {
+                    compile::VersionSource::Published { forced, .. } => *forced = true,
+                    compile::VersionSource::Local { forced, .. } => *forced = true,
+                }
                 versions.push(version_source);
+            }
+        }
+
+        // Auto-insert non-forced variants for each forced version (unless --skip-normal-testing)
+        if !args.skip_normal_testing {
+            let forced_versions: Vec<compile::VersionSource> = versions.iter()
+                .filter(|v| v.is_forced())
+                .cloned()
+                .collect();
+
+            for forced_ver in forced_versions {
+                // Check if a non-forced variant already exists
+                let has_non_forced = match &forced_ver {
+                    compile::VersionSource::Published { version: fv, .. } => {
+                        versions.iter().any(|v| {
+                            match v {
+                                compile::VersionSource::Published { version: v, forced } =>
+                                    v == fv && !forced,
+                                _ => false,
+                            }
+                        })
+                    }
+                    compile::VersionSource::Local { path: fp, .. } => {
+                        versions.iter().any(|v| {
+                            match v {
+                                compile::VersionSource::Local { path: p, forced } =>
+                                    p == fp && !forced,
+                                _ => false,
+                            }
+                        })
+                    }
+                };
+
+                if !has_non_forced {
+                    // Insert non-forced variant
+                    let non_forced = match forced_ver {
+                        compile::VersionSource::Published { version, .. } => {
+                            debug!("Auto-inserting non-forced test for version {}", version);
+                            compile::VersionSource::Published { version, forced: false }
+                        }
+                        compile::VersionSource::Local { path, .. } => {
+                            debug!("Auto-inserting non-forced test for 'this'");
+                            compile::VersionSource::Local { path, forced: false }
+                        }
+                    };
+                    versions.push(non_forced);
+                }
             }
         }
 
@@ -274,12 +338,15 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
         if let CrateOverride::Source(ref manifest_path) = config.next_override {
             // Check if "this" is already in the list
             let this_already_added = versions.iter().any(|v| {
-                matches!(v, compile::VersionSource::Local(_))
+                matches!(v, compile::VersionSource::Local { .. })
             });
 
             if !this_already_added {
                 debug!("Auto-adding 'this' version from {:?} (forced by default)", manifest_path);
-                versions.push(compile::VersionSource::Local(manifest_path.clone()));
+                versions.push(compile::VersionSource::Local {
+                    path: manifest_path.clone(),
+                    forced: true  // Auto-added WIP is forced by default
+                });
                 // Mark auto-added WIP as forced
                 force_local = true;
             }
@@ -289,12 +356,15 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
                 Ok(ver) => {
                     // Check if this version is already in the list
                     let already_present = versions.iter().any(|v| {
-                        matches!(v, compile::VersionSource::Published(existing) if existing == &ver)
+                        matches!(v, compile::VersionSource::Published { version, .. } if version == &ver)
                     });
 
                     if !already_present {
                         debug!("No local version, adding latest: {}", ver);
-                        versions.push(compile::VersionSource::Published(ver));
+                        versions.push(compile::VersionSource::Published {
+                            version: ver,
+                            forced: false
+                        });
                     } else {
                         debug!("Latest version {} already in test list, skipping auto-add", ver);
                     }
@@ -346,10 +416,16 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
     let versions_to_test = test_versions.clone().unwrap_or_else(|| {
         let mut versions = Vec::new();
         if let CrateOverride::Source(ref manifest_path) = config.next_override {
-            versions.push(compile::VersionSource::Local(manifest_path.clone()));
+            versions.push(compile::VersionSource::Local {
+                path: manifest_path.clone(),
+                forced: force_local
+            });
         } else {
             if let Ok(ver) = resolve_latest_version(&config.crate_name, false) {
-                versions.push(compile::VersionSource::Published(ver));
+                versions.push(compile::VersionSource::Published {
+                    version: ver,
+                    forced: false
+                });
             }
         }
         versions
@@ -365,11 +441,17 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
             let mut versions = Vec::new();
             // Add "this" (local WIP) or "latest" if no local version
             if let CrateOverride::Source(ref manifest_path) = config.next_override {
-                versions.push(compile::VersionSource::Local(manifest_path.clone()));
+                versions.push(compile::VersionSource::Local {
+                    path: manifest_path.clone(),
+                    forced: force_local
+                });
             } else {
                 // No local version (only --crate), add "latest" as final version
                 if let Ok(ver) = resolve_latest_version(&config.crate_name, false) {
-                    versions.push(compile::VersionSource::Published(ver));
+                    versions.push(compile::VersionSource::Published {
+                        version: ver,
+                        forced: false
+                    });
                 }
             }
             versions
@@ -848,8 +930,8 @@ impl TestResult {
 
                     // Convert compile::VersionSource to main::VersionSource
                     let resolved_source = match &outcome.version_source {
-                        compile::VersionSource::Local(_) => VersionSource::Local,
-                        compile::VersionSource::Published(_) => VersionSource::CratesIo,
+                        compile::VersionSource::Local { .. } => VersionSource::Local,
+                        compile::VersionSource::Published { .. } => VersionSource::CratesIo,
                     };
 
                     // Build primary DependencyRef
@@ -1248,7 +1330,10 @@ fn run_multi_version_test(
             // Always insert baseline at position 0
             // Even if the same version appears later in the list (from --force-versions),
             // this baseline will be tested in non-forced mode
-            test_versions.insert(0, compile::VersionSource::Published(baseline.clone()));
+            test_versions.insert(0, compile::VersionSource::Published {
+                version: baseline.clone(),
+                forced: false
+            });
             debug!("Inserted baseline {} at position 0 (will be non-forced)", baseline);
         }
     }
@@ -1293,7 +1378,7 @@ fn run_multi_version_test(
 
         // Check if this is the baseline (first version and matches baseline_version)
         let is_baseline = idx == 0 && baseline_version.is_some() && {
-            if let compile::VersionSource::Published(ref ver) = version_source {
+            if let compile::VersionSource::Published { version: ref ver, .. } = version_source {
                 Some(ver.as_str()) == baseline_version.as_deref()
             } else {
                 false
@@ -1309,7 +1394,7 @@ fn run_multi_version_test(
             None  // Let cargo handle baseline naturally
         } else {
             match &version_source {
-                compile::VersionSource::Local(path) => {
+                compile::VersionSource::Local { path, .. } => {
                     // If path points to Cargo.toml, extract directory
                     let dir_path = if path.ends_with("Cargo.toml") {
                         path.parent().unwrap().to_path_buf()
@@ -1319,7 +1404,7 @@ fn run_multi_version_test(
                     debug!("Using local version path: {:?}", dir_path);
                     Some(dir_path)
                 }
-                compile::VersionSource::Published(version) => {
+                compile::VersionSource::Published { version, .. } => {
                     match download_and_unpack_base_crate_version(
                     &config.crate_name,
                     version,
@@ -1329,8 +1414,7 @@ fn run_multi_version_test(
                     Err(e) => {
                         status(&format!("Warning: Failed to download {} {}: {}", config.crate_name, version, e));
                         // Create a failed outcome
-                        // version is already validated as concrete semver at input time
-                        let is_forced = config.force_versions.contains(version);
+                        let is_forced = version_source.is_forced();
 
                         let failed_result = compile::ThreeStepResult {
                             fetch: compile::CompileResult {
@@ -1367,21 +1451,18 @@ fn run_multi_version_test(
         // IMPORTANT: Baseline is NEVER forced, even if it's in --force-versions list
         let (expected_version, is_forced) = if is_baseline {
             match &version_source {
-                compile::VersionSource::Published(v) => (Some(v.clone()), false),
-                compile::VersionSource::Local(_) => (None, false),
+                compile::VersionSource::Published { version: v, .. } => (Some(v.clone()), false),
+                compile::VersionSource::Local { .. } => (None, false),
             }
         } else {
             match &version_source {
-                compile::VersionSource::Published(v) => {
-                    // v is already validated as concrete semver at input time
-                    let forced = config.force_versions.contains(v);
-                    (Some(v.clone()), forced)
+                compile::VersionSource::Published { version: v, .. } => {
+                    // Use the forced flag from VersionSource
+                    (Some(v.clone()), version_source.is_forced())
                 }
-                compile::VersionSource::Local(_) => {
-                    // Local WIP: use force_local flag
-                    // true if: "this" in --force-versions OR auto-added (default)
-                    // false if: "this" in --test-versions (explicitly non-forced)
-                    (None, force_local)
+                compile::VersionSource::Local { .. } => {
+                    // Use the forced flag from VersionSource
+                    (None, version_source.is_forced())
                 }
             }
         };
@@ -1391,8 +1472,8 @@ fn run_multi_version_test(
             format!("baseline ({})", version_source.label())
         } else {
             match &version_source {
-                compile::VersionSource::Published(v) => format!("offered ({})", v),
-                compile::VersionSource::Local(_) => "offered (WIP)".to_string(),
+                compile::VersionSource::Published { version: v, .. } => format!("offered ({})", v),
+                compile::VersionSource::Local { .. } => "offered (WIP)".to_string(),
             }
         };
 
