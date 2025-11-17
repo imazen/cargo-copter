@@ -345,8 +345,10 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: O
         if !formatted.error_details.is_empty() {
             let current_error = formatted.error_details.join("\n");
             if current_error == prev {
-                // Replace with "[SAME ERROR]" marker
-                formatted.error_details = vec!["[SAME ERROR]".to_string()];
+                // Clear error details and show "still failing" in result column
+                formatted.error_details.clear();
+                formatted.result = "still failing".to_string();
+                formatted.time = String::new();
             }
         }
     }
@@ -359,7 +361,12 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: O
     let spec_display = truncate_with_padding(&formatted.spec, w.spec - 2);
     let resolved_display = truncate_with_padding(&formatted.resolved, w.resolved - 2);
     let dependent_display = truncate_with_padding(&formatted.dependent, w.dependent - 2);
-    let result_display = format!("{:>12} {:>5}", formatted.result, formatted.time);
+    let result_display = if formatted.time.is_empty() {
+        // "still failing" case - no ICT marks or time
+        format!("{:>18}", formatted.result)
+    } else {
+        format!("{:>12} {:>5}", formatted.result, formatted.time)
+    };
     let result_display = truncate_with_padding(&result_display, w.result - 2);
 
     // Print main row with color
