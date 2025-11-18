@@ -14,10 +14,12 @@ mod compile;
 mod console_format;
 mod download;
 mod error_extract;
+mod git;
 mod metadata;
 mod report;
 mod toml_helpers;
 mod types;
+mod ui;
 
 use lazy_static::lazy_static;
 use log::debug;
@@ -51,7 +53,7 @@ fn resolve_version_keyword(
                 debug!("Resolved 'this' to local WIP at {:?}", manifest_path);
                 Ok(Some(compile::VersionSource::Local { path: manifest_path.clone(), forced: false }))
             } else {
-                status("Warning: 'this' specified but no local source available (--path or --crate)");
+                ui::status("Warning: 'this' specified but no local source available (--path or --crate)");
                 Ok(None)
             }
         }
@@ -63,7 +65,7 @@ fn resolve_version_keyword(
                     Ok(Some(compile::VersionSource::Published { version: ver, forced: false }))
                 }
                 Err(e) => {
-                    status(&format!("Warning: Failed to resolve 'latest': {}", e));
+                    ui::status(&format!("Warning: Failed to resolve 'latest': {}", e));
                     Ok(None)
                 }
             }
@@ -76,7 +78,7 @@ fn resolve_version_keyword(
                     Ok(Some(compile::VersionSource::Published { version: ver, forced: false }))
                 }
                 Err(e) => {
-                    status(&format!("Warning: Failed to resolve '{}': {}", version_str, e));
+                    ui::status(&format!("Warning: Failed to resolve '{}': {}", version_str, e));
                     Ok(None)
                 }
             }
@@ -376,7 +378,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
                     }
                 }
                 Err(e) => {
-                    status(&format!("Warning: Failed to resolve latest version: {}", e));
+                    ui::status(&format!("Warning: Failed to resolve latest version: {}", e));
                 }
             }
         }
@@ -625,27 +627,6 @@ enum CrateOverride {
 }
 
 /// Get short git hash (7 chars) if in a git repository
-fn get_git_hash() -> Option<String> {
-    Command::new("git")
-        .args(&["rev-parse", "--short", "HEAD"])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|s| s.trim().to_string())
-}
-
-/// Check if git working directory is dirty (has uncommitted changes)
-fn is_git_dirty() -> bool {
-    Command::new("git")
-        .args(&["status", "--porcelain"])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false)
-}
 
 fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
     // Determine crate name and version based on --crate and --path
@@ -705,8 +686,8 @@ fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
     };
 
     // Get git information for display (only if we have a local source)
-    let git_hash = get_git_hash();
-    let is_dirty = git_hash.is_none() || is_git_dirty();
+    let git_hash = git::get_git_hash();
+    let is_dirty = git_hash.is_none() || git::is_git_dirty();
 
     Ok(Config {
         crate_name,
@@ -1380,7 +1361,7 @@ fn run_multi_version_test(
                     match download::download_and_unpack_crate(&config.crate_name, version, &config.staging_dir) {
                         Ok(path) => Some(path),
                         Err(e) => {
-                            status(&format!("Warning: Failed to download {} {}: {}", config.crate_name, version, e));
+                            ui::status(&format!("Warning: Failed to download {} {}: {}", config.crate_name, version, e));
                             // Create a failed outcome
                             let is_forced = version_source.is_forced();
 
@@ -1656,48 +1637,6 @@ fn resolve_latest_version(crate_name: &str, include_prerelease: bool) -> Result<
 }
 
 
-fn status_lock<F>(f: F)
-where
-    F: FnOnce() -> (),
-{
-    lazy_static! {
-        static ref LOCK: Mutex<()> = Mutex::new(());
-    }
-    let _guard = LOCK.lock();
-    f();
-}
-
-fn print_status_header() {
-    print!("copter: ");
-}
-
-fn print_color(s: &str, fg: term::color::Color) {
-    if !really_print_color(s, fg) {
-        print!("{}", s);
-    }
-
-    fn really_print_color(s: &str, fg: term::color::Color) -> bool {
-        if let Some(ref mut t) = term::stdout() {
-            if t.fg(fg).is_err() {
-                return false;
-            }
-            let _ = t.attr(term::Attr::Bold);
-            if write!(t, "{}", s).is_err() {
-                return false;
-            }
-            let _ = t.reset();
-        }
-
-        true
-    }
-}
-
-fn status(s: &str) {
-    status_lock(|| {
-        print_status_header();
-        println!("{}", s);
-    });
-}
 
 fn report_results(res: Result<Vec<TestResult>, Error>, _args: &cli::CliArgs, _config: &Config) {
     match res {
@@ -1716,11 +1655,7 @@ fn report_results(res: Result<Vec<TestResult>, Error>, _args: &cli::CliArgs, _co
 }
 
 fn report_error(e: Error) {
-    println!("");
-    print_color("error", term::color::BRIGHT_RED);
-    println!(": {}", e);
-    println!("");
-
+    ui::print_error(&e.to_string());
     std::process::exit(-1);
 }
 
