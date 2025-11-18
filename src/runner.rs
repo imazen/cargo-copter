@@ -16,15 +16,31 @@ where
 {
     debug!("Starting test execution for {} test pairs", matrix.test_count());
 
-    // Step 1: Resolve any Version::Latest entries
-    resolve_all_versions(&mut matrix)?;
+    // Step 1: Resolve base version Latest entries (just a few, so do upfront)
+    for base_spec in &mut matrix.base_versions {
+        if let Version::Latest = base_spec.crate_ref.version {
+            let latest = version::resolve_latest_version(&base_spec.crate_ref.name, false)
+                .map_err(|e| format!("Failed to resolve latest version for {}: {}", base_spec.crate_ref.name, e))?;
+            base_spec.crate_ref.version = Version::Semver(latest);
+        }
+    }
 
     // Step 2: Execute all test pairs
     // IMPORTANT: Must iterate dependents × base_versions (outer × inner)
     // This ensures baseline is tested first for each dependent
     let mut results = Vec::new();
 
-    for dependent_spec in &matrix.dependents {
+    // Use indices to allow lazy resolution per dependent (enables streaming)
+    for idx in 0..matrix.dependents.len() {
+        // Resolve this specific dependent's version lazily (just before testing it)
+        if let Version::Latest = matrix.dependents[idx].crate_ref.version {
+            let name = matrix.dependents[idx].crate_ref.name.clone();
+            let latest = version::resolve_latest_version(&name, false)
+                .map_err(|e| format!("Failed to resolve latest version for {}: {}", name, e))?;
+            matrix.dependents[idx].crate_ref.version = Version::Semver(latest);
+        }
+
+        let dependent_spec = &matrix.dependents[idx];
         // Get the dependent version (now guaranteed to be resolved)
         let dependent = &dependent_spec.crate_ref;
 
@@ -79,29 +95,6 @@ where
     }
 
     Ok(results)
-}
-
-/// Resolve all Version::Latest entries to concrete versions
-fn resolve_all_versions(matrix: &mut TestMatrix) -> Result<(), String> {
-    // Resolve base versions
-    for base_spec in &mut matrix.base_versions {
-        if let Version::Latest = base_spec.crate_ref.version {
-            let latest = version::resolve_latest_version(&base_spec.crate_ref.name, false)
-                .map_err(|e| format!("Failed to resolve latest version for {}: {}", base_spec.crate_ref.name, e))?;
-            base_spec.crate_ref.version = Version::Semver(latest);
-        }
-    }
-
-    // Resolve dependent versions
-    for dep_spec in &mut matrix.dependents {
-        if let Version::Latest = dep_spec.crate_ref.version {
-            let latest = version::resolve_latest_version(&dep_spec.crate_ref.name, false)
-                .map_err(|e| format!("Failed to resolve latest version for {}: {}", dep_spec.crate_ref.name, e))?;
-            dep_spec.crate_ref.version = Version::Semver(latest);
-        }
-    }
-
-    Ok(())
 }
 
 /// Run a single test: one (base_version, dependent) pair

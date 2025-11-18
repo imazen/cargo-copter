@@ -49,7 +49,7 @@
             "command": "Fetch",
             "features": [],
             "result": {
-              "duration": 0.45503427,
+              "duration": 0.572650998,
               "failures": [],
               "passed": true
             }
@@ -58,7 +58,7 @@
             "command": "Check",
             "features": [],
             "result": {
-              "duration": 0.067268635,
+              "duration": 0.067430362,
               "failures": [],
               "passed": true
             }
@@ -67,7 +67,7 @@
             "command": "Test",
             "features": [],
             "result": {
-              "duration": 0.070458489,
+              "duration": 0.066080909,
               "failures": [],
               "passed": true
             }
@@ -119,7 +119,7 @@
             "command": "Fetch",
             "features": [],
             "result": {
-              "duration": 0.33598998,
+              "duration": 0.365090336,
               "failures": [],
               "passed": true
             }
@@ -128,7 +128,7 @@
             "command": "Check",
             "features": [],
             "result": {
-              "duration": 0.277383654,
+              "duration": 0.275122344,
               "failures": [
                 {
                   "crate_name": "dependent",
