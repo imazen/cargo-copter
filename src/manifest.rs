@@ -56,6 +56,16 @@ pub struct RevDep {
     pub resolved_version: Option<String>,
 }
 
+/// Parse dependent specification in "name:version" format
+///
+/// Returns (name, optional_version)
+pub fn parse_dependent_spec(spec: &str) -> (String, Option<String>) {
+    match spec.split_once(':') {
+        Some((name, version)) => (name.to_string(), Some(version.to_string())),
+        None => (spec.to_string(), None),
+    }
+}
+
 /// Extract the dependency requirement string from a dependent's Cargo.toml
 ///
 /// Downloads the dependent crate, extracts its Cargo.toml, and finds the

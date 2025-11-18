@@ -156,3 +156,54 @@ impl VersionSource {
         }
     }
 }
+
+/// Extract error summary with fallback to stderr
+///
+/// Attempts to extract a clean error summary from diagnostics, falling back
+/// to full stderr if extraction fails.
+pub fn extract_error_with_fallback(
+    diagnostics: &[crate::error_extract::Diagnostic],
+    stderr: &str,
+    _max_lines: usize,
+) -> String {
+    // Always extract FULL error for storage - truncation happens at display time
+    let msg = crate::error_extract::extract_error_summary(diagnostics, 0); // 0 = unlimited
+    if !msg.is_empty() {
+        msg
+    } else {
+        // Return full stderr
+        stderr.to_string()
+    }
+}
+
+/// Convert CompileResult to TestCommand for OfferedRow construction
+pub fn compile_result_to_command(
+    compile_result: &crate::compile::CompileResult,
+    command_type: CommandType,
+    crate_name: &str,
+    max_error_lines: usize,
+) -> TestCommand {
+    let failures = if !compile_result.success {
+        let error_msg = extract_error_with_fallback(
+            &compile_result.diagnostics,
+            &compile_result.stderr,
+            max_error_lines,
+        );
+        vec![CrateFailure {
+            crate_name: crate_name.to_string(),
+            error_message: error_msg,
+        }]
+    } else {
+        vec![]
+    };
+
+    TestCommand {
+        command: command_type,
+        features: vec![],
+        result: CommandResult {
+            passed: compile_result.success,
+            duration: compile_result.duration.as_secs_f64(),
+            failures,
+        },
+    }
+}

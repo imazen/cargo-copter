@@ -21,6 +21,7 @@ mod report;
 mod toml_helpers;
 mod types;
 mod ui;
+mod version;
 
 use lazy_static::lazy_static;
 use log::debug;
@@ -43,65 +44,6 @@ const USER_AGENT: &str = "cargo-copter/0.1.1 (https://github.com/imazen/cargo-co
 
 /// Resolve a version keyword ("this", "latest", "latest-preview") or concrete version
 /// to a VersionSource for testing
-fn resolve_version_keyword(
-    version_str: &str,
-    crate_name: &str,
-    local_manifest: Option<&PathBuf>,
-) -> Result<Option<compile::VersionSource>, Error> {
-    match version_str {
-        "this" => {
-            // User explicitly requested WIP version
-            if let Some(manifest_path) = local_manifest {
-                debug!("Resolved 'this' to local WIP at {:?}", manifest_path);
-                Ok(Some(compile::VersionSource::Local { path: manifest_path.clone(), forced: false }))
-            } else {
-                ui::status("Warning: 'this' specified but no local source available (--path or --crate)");
-                Ok(None)
-            }
-        }
-        "latest" => {
-            // Resolve to latest stable version
-            match resolve_latest_version(crate_name, false) {
-                Ok(ver) => {
-                    debug!("Resolved 'latest' to {}", ver);
-                    Ok(Some(compile::VersionSource::Published { version: ver, forced: false }))
-                }
-                Err(e) => {
-                    ui::status(&format!("Warning: Failed to resolve 'latest': {}", e));
-                    Ok(None)
-                }
-            }
-        }
-        "latest-preview" | "latest-prerelease" => {
-            // Resolve to latest version including pre-releases
-            match resolve_latest_version(crate_name, true) {
-                Ok(ver) => {
-                    debug!("Resolved '{}' to {}", version_str, ver);
-                    Ok(Some(compile::VersionSource::Published { version: ver, forced: false }))
-                }
-                Err(e) => {
-                    ui::status(&format!("Warning: Failed to resolve '{}': {}", version_str, e));
-                    Ok(None)
-                }
-            }
-        }
-        _ => {
-            // Validate it's a concrete version, not a version requirement
-            if version_str.starts_with('^') || version_str.starts_with('~') || version_str.starts_with('=') {
-                return Err(Error::InvalidVersion(format!(
-                    "Version requirement '{}' not allowed. Use concrete versions like '0.8.52'",
-                    version_str
-                )));
-            }
-
-            // Validate it's a valid semver version
-            Version::parse(version_str)?;
-
-            // Literal version string (supports hyphens like "0.8.2-alpha2")
-            Ok(Some(compile::VersionSource::Published { version: version_str.to_string(), forced: false }))
-        }
-    }
-}
 
 fn main() {
     env_logger::init();
@@ -144,12 +86,6 @@ fn main() {
 }
 
 /// Parse dependent spec in "name" or "name:version" format
-fn parse_dependent_spec(spec: &str) -> (String, Option<String>) {
-    match spec.split_once(':') {
-        Some((name, version)) => (name.to_string(), Some(version.to_string())),
-        None => (spec.to_string(), None),
-    }
-}
 
 /// Generate a compact test plan showing what will be tested
 fn format_test_plan(
@@ -264,14 +200,16 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
         };
 
         for ver_str in &args.test_versions {
-            if let Some(version_source) = resolve_version_keyword(ver_str, &config.crate_name, local_manifest)? {
+            if let Some(version_source) = version::resolve_version_keyword(ver_str, &config.crate_name, local_manifest)
+                .map_err(|e| Error::ProcessError(e))? {
                 versions.push(version_source);
             }
         }
 
         // Add versions from --force-versions and mark them as forced
         for ver_str in &args.force_versions {
-            if let Some(mut version_source) = resolve_version_keyword(ver_str, &config.crate_name, local_manifest)? {
+            if let Some(mut version_source) = version::resolve_version_keyword(ver_str, &config.crate_name, local_manifest)
+                .map_err(|e| Error::ProcessError(e))? {
                 // Mark this version as forced
                 match &mut version_source {
                     compile::VersionSource::Published { forced, .. } => *forced = true,
@@ -365,7 +303,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
             }
         } else {
             // No local version (only --crate), add "latest" as final version if not already present
-            match resolve_latest_version(&config.crate_name, false) {
+            match version::resolve_latest_version(&config.crate_name, false) {
                 Ok(ver) => {
                     // Check if this version is already in the list
                     let already_present = versions
@@ -407,7 +345,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
             .collect::<Result<Vec<_>, _>>()?
     } else if !args.dependents.is_empty() {
         // Explicit crate names from crates.io (parse name:version syntax)
-        args.dependents.iter().map(|spec| parse_dependent_spec(spec)).collect()
+        args.dependents.iter().map(|spec| manifest::parse_dependent_spec(spec)).collect()
     } else {
         // Top N by downloads (no version spec)
         let api_deps =
@@ -421,7 +359,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
         if let CrateOverride::Source(ref manifest_path) = config.next_override {
             versions.push(compile::VersionSource::Local { path: manifest_path.clone(), forced: force_local });
         } else {
-            if let Ok(ver) = resolve_latest_version(&config.crate_name, false) {
+            if let Ok(ver) = version::resolve_latest_version(&config.crate_name, false) {
                 versions.push(compile::VersionSource::Published { version: ver, forced: false });
             }
         }
@@ -457,7 +395,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
                 versions.push(compile::VersionSource::Local { path: manifest_path.clone(), forced: force_local });
             } else {
                 // No local version (only --crate), add "latest" as final version
-                if let Ok(ver) = resolve_latest_version(&config.crate_name, false) {
+                if let Ok(ver) = version::resolve_latest_version(&config.crate_name, false) {
                     versions.push(compile::VersionSource::Published { version: ver, forced: false });
                 }
             }
@@ -660,7 +598,7 @@ fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
             // No --path, so there's no "this" version
             // Fetch latest version from crates.io for display purposes
             debug!("No --path specified, fetching latest version from crates.io");
-            let latest_version = match resolve_latest_version(crate_name, false) {
+            let latest_version = match version::resolve_latest_version(crate_name, false) {
                 Ok(v) => {
                     debug!("Latest version of {} is {}", crate_name, v);
                     v
@@ -740,42 +678,6 @@ pub enum VersionStatus {
 // ============================================================================
 
 /// Extract error message from diagnostics with stderr fallback
-fn extract_error_with_fallback(diagnostics: &[error_extract::Diagnostic], stderr: &str, _max_lines: usize) -> String {
-    // Always extract FULL error for storage - truncation happens at display time
-    let msg = error_extract::extract_error_summary(diagnostics, 0); // 0 = unlimited
-    if !msg.is_empty() {
-        msg
-    } else {
-        // Return full stderr
-        stderr.to_string()
-    }
-}
-
-/// Convert CompileResult to TestCommand for OfferedRow construction
-fn compile_result_to_command(
-    compile_result: &compile::CompileResult,
-    command_type: CommandType,
-    crate_name: &str,
-    max_error_lines: usize,
-) -> TestCommand {
-    let failures = if !compile_result.success {
-        let error_msg =
-            extract_error_with_fallback(&compile_result.diagnostics, &compile_result.stderr, max_error_lines);
-        vec![CrateFailure { crate_name: crate_name.to_string(), error_message: error_msg }]
-    } else {
-        vec![]
-    };
-
-    TestCommand {
-        command: command_type,
-        features: vec![],
-        result: CommandResult {
-            passed: compile_result.success,
-            duration: compile_result.duration.as_secs_f64(),
-            failures,
-        },
-    }
-}
 
 impl TestResult {
     /// Convert TestResult to OfferedRows for streaming output
@@ -832,7 +734,7 @@ impl TestResult {
                     let mut commands = Vec::new();
 
                     // Fetch command
-                    commands.push(compile_result_to_command(
+                    commands.push(types::compile_result_to_command(
                         &outcome.result.fetch,
                         CommandType::Fetch,
                         &self.rev_dep.name,
@@ -841,7 +743,7 @@ impl TestResult {
 
                     // Check command (if ran)
                     if let Some(ref check) = outcome.result.check {
-                        commands.push(compile_result_to_command(
+                        commands.push(types::compile_result_to_command(
                             check,
                             CommandType::Check,
                             &self.rev_dep.name,
@@ -851,7 +753,7 @@ impl TestResult {
 
                     // Test command (if ran)
                     if let Some(ref test) = outcome.result.test {
-                        commands.push(compile_result_to_command(
+                        commands.push(types::compile_result_to_command(
                             test,
                             CommandType::Test,
                             &self.rev_dep.name,
@@ -1146,16 +1048,16 @@ fn outcome_to_row(
     let mut commands = Vec::new();
 
     // Fetch command
-    commands.push(compile_result_to_command(&outcome.result.fetch, CommandType::Fetch, &rev_dep.name, max_error_lines));
+    commands.push(types::compile_result_to_command(&outcome.result.fetch, CommandType::Fetch, &rev_dep.name, max_error_lines));
 
     // Check command (if ran)
     if let Some(ref check) = outcome.result.check {
-        commands.push(compile_result_to_command(check, CommandType::Check, &rev_dep.name, max_error_lines));
+        commands.push(types::compile_result_to_command(check, CommandType::Check, &rev_dep.name, max_error_lines));
     }
 
     // Test command (if ran)
     if let Some(ref test) = outcome.result.test {
-        commands.push(compile_result_to_command(test, CommandType::Test, &rev_dep.name, max_error_lines));
+        commands.push(types::compile_result_to_command(test, CommandType::Test, &rev_dep.name, max_error_lines));
     }
 
     // Convert all_crate_versions to TransitiveTest entries
@@ -1209,11 +1111,11 @@ fn run_multi_version_test(
     // status(&format!("testing crate {} (multi-version)", rev_dep));
 
     // Resolve dependent version
-    let mut rev_dep = match resolve_rev_dep_version(rev_dep.clone(), dependent_version) {
+    let mut rev_dep = match version::resolve_rev_dep_version(rev_dep.clone(), dependent_version) {
         Ok(r) => r,
         Err(e) => {
             let rev_dep = RevDep { name: rev_dep, vers: Version::parse("0.0.0").unwrap(), resolved_version: None };
-            return (TestResult::error(rev_dep, e), vec![]);
+            return (TestResult::error(rev_dep, Error::ProcessError(e)), vec![]);
         }
     };
 
@@ -1248,11 +1150,13 @@ fn run_multi_version_test(
     }
 
     // Check version compatibility
-    match check_version_compatibility(&rev_dep, &config) {
+    match version::check_version_compatibility(&rev_dep, &config.crate_name, &config.version) {
         Ok(true) => {} // Compatible
         Ok(false) => {
-            let reason =
-                format!("Dependent requires version incompatible with {} v{}", config.crate_name, config.version);
+            let reason = format!(
+                "Dependent requires version incompatible with {} v{}",
+                config.crate_name, config.version
+            );
             return (TestResult::skipped(rev_dep, reason), vec![]);
         }
         Err(e) => {
@@ -1448,109 +1352,6 @@ fn run_multi_version_test(
     (TestResult { rev_dep, data: TestResultData::MultiVersion(outcomes) }, rows)
 }
 
-fn check_version_compatibility(rev_dep: &RevDep, config: &Config) -> Result<bool, Error> {
-    debug!("checking version compatibility for {} {}", rev_dep.name, rev_dep.vers);
-
-    // Download and cache the dependent's .crate file
-    let crate_handle = download::get_crate_handle(&rev_dep.name, &rev_dep.vers)?;
-
-    // Create temp directory to extract Cargo.toml
-    let temp_dir = TempDir::new()?;
-    let extract_dir = temp_dir.path().join("extracted");
-    fs::create_dir(&extract_dir)?;
-
-    // Extract just the Cargo.toml
-    download::extract_cargo_toml(crate_handle.path(), &extract_dir)?;
-
-    // Read and parse Cargo.toml
-    let toml_path = extract_dir.join("Cargo.toml");
-    let toml_str = manifest::load_string(&toml_path)
-        .map_err(|e| Error::ProcessError(e))?;
-    let value: toml::Value = toml::from_str(&toml_str)?;
-
-    // Look for our crate in dependencies
-    let our_crate = &config.crate_name;
-    let wip_version = Version::parse(&config.version)?;
-
-    // Check [dependencies]
-    if let Some(deps) = value.get("dependencies").and_then(|v| v.as_table()) {
-        if let Some(req) = deps.get(our_crate) {
-            return check_requirement(req, &wip_version);
-        }
-    }
-
-    // Check [dev-dependencies]
-    if let Some(deps) = value.get("dev-dependencies").and_then(|v| v.as_table()) {
-        if let Some(req) = deps.get(our_crate) {
-            return check_requirement(req, &wip_version);
-        }
-    }
-
-    // Check [build-dependencies]
-    if let Some(deps) = value.get("build-dependencies").and_then(|v| v.as_table()) {
-        if let Some(req) = deps.get(our_crate) {
-            return check_requirement(req, &wip_version);
-        }
-    }
-
-    // Crate not found in dependencies (shouldn't happen for reverse deps)
-    debug!("Warning: {} not found in {}'s dependencies", our_crate, rev_dep.name);
-    Ok(true) // Test anyway
-}
-
-fn check_requirement(req: &toml::Value, wip_version: &Version) -> Result<bool, Error> {
-    use semver::VersionReq;
-
-    let req_str = toml_helpers::extract_requirement_string(req);
-
-    debug!("Checking if version {} satisfies requirement '{}'", wip_version, req_str);
-
-    let version_req = VersionReq::parse(&req_str).map_err(|e| Error::SemverError(e))?;
-
-    Ok(version_req.matches(wip_version))
-}
-
-/// Extract the original requirement spec for our crate from a dependent's Cargo.toml
-
-fn resolve_rev_dep_version(name: String, version: Option<String>) -> Result<RevDep, Error> {
-    // If version is provided, use it directly
-    if let Some(ver_str) = version {
-        debug!("using pinned version {} for {}", ver_str, name);
-        let vers = Version::parse(&ver_str).map_err(|e| Error::SemverError(e))?;
-        return Ok(RevDep { name: name, vers: vers, resolved_version: None });
-    }
-
-    // Otherwise, resolve latest version from crates.io
-    debug!("resolving current version for {}", name);
-
-    let krate = api::get_client().get_crate(&name).map_err(|e| Error::CratesIoApiError(e.to_string()))?;
-
-    // Pull out the version numbers and sort them
-    let versions = krate.versions.iter().filter_map(|r| Version::parse(&r.num).ok());
-    let mut versions = versions.collect::<Vec<_>>();
-    versions.sort();
-
-    versions.pop().map(|v| RevDep { name: name, vers: v, resolved_version: None }).ok_or(Error::NoCrateVersions)
-}
-
-/// Resolve 'latest' or 'latest-preview' keyword to actual version
-fn resolve_latest_version(crate_name: &str, include_prerelease: bool) -> Result<String, Error> {
-    debug!("Resolving latest version for {} (prerelease={})", crate_name, include_prerelease);
-
-    let krate = api::get_client().get_crate(crate_name).map_err(|e| Error::CratesIoApiError(e.to_string()))?;
-
-    // Filter and sort versions
-    let mut versions: Vec<Version> = krate
-        .versions
-        .iter()
-        .filter_map(|r| Version::parse(&r.num).ok())
-        .filter(|v| include_prerelease || v.pre.is_empty()) // Filter pre-releases unless requested
-        .collect();
-
-    versions.sort();
-
-    versions.pop().map(|v| v.to_string()).ok_or(Error::NoCrateVersions)
-}
 
 
 
