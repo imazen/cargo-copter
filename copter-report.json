@@ -49,7 +49,7 @@
             "command": "Fetch",
             "features": [],
             "result": {
-              "duration": 0.57006086,
+              "duration": 0.45503427,
               "failures": [],
               "passed": true
             }
@@ -58,7 +58,7 @@
             "command": "Check",
             "features": [],
             "result": {
-              "duration": 0.351634071,
+              "duration": 0.067268635,
               "failures": [],
               "passed": true
             }
@@ -67,14 +67,37 @@
             "command": "Test",
             "features": [],
             "result": {
-              "duration": 0.072263414,
+              "duration": 0.070458489,
               "failures": [],
               "passed": true
             }
           }
         ]
       },
-      "transitive": []
+      "transitive": [
+        {
+          "dependency": {
+            "dependent_name": "load_image",
+            "dependent_version": "?",
+            "resolved_source": "CratesIo",
+            "resolved_version": "0.8.52",
+            "spec": "^0.8.52",
+            "used_offered_version": false
+          },
+          "depth": 1
+        },
+        {
+          "dependency": {
+            "dependent_name": "lodepng",
+            "dependent_version": "?",
+            "resolved_source": "CratesIo",
+            "resolved_version": "0.8.52",
+            "spec": "^0.8.50",
+            "used_offered_version": false
+          },
+          "depth": 1
+        }
+      ]
     },
     {
       "baseline_passed": true,
@@ -96,7 +119,7 @@
             "command": "Fetch",
             "features": [],
             "result": {
-              "duration": 0.346587156,
+              "duration": 0.33598998,
               "failures": [],
               "passed": true
             }
@@ -105,7 +128,7 @@
             "command": "Check",
             "features": [],
             "result": {
-              "duration": 0.253185586,
+              "duration": 0.277383654,
               "failures": [
                 {
                   "crate_name": "dependent",

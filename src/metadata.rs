@@ -81,15 +81,14 @@ pub fn find_all_versions(parsed: &ParsedMetadata, crate_name: &str) -> Vec<Versi
                         let pkg = dep.get("pkg").and_then(|p| p.as_str()).unwrap_or("");
 
                         // Extract crate name and version from package ID
-                        // Format: "crate-name version (registry+...)"
-                        if let Some(space_pos) = pkg.find(' ') {
-                            let dep_crate_name = &pkg[..space_pos];
-                            if dep_crate_name == crate_name {
-                                // Extract version
-                                let rest = &pkg[space_pos + 1..];
-                                if let Some(paren_pos) = rest.find(" (") {
-                                    let version = &rest[..paren_pos];
+                        // Format: "source#name@version" (e.g., "registry+https://...#rgb@0.8.52")
+                        if let Some(hash_pos) = pkg.find('#') {
+                            let after_hash = &pkg[hash_pos + 1..];
+                            if let Some(at_pos) = after_hash.find('@') {
+                                let dep_crate_name = &after_hash[..at_pos];
+                                let version = &after_hash[at_pos + 1..];
 
+                                if dep_crate_name == crate_name {
                                     // Get the version spec from the dependent package
                                     let spec = get_version_spec(parsed, node_id, crate_name)
                                         .unwrap_or_else(|_| "?".to_string());
@@ -114,12 +113,12 @@ pub fn find_all_versions(parsed: &ParsedMetadata, crate_name: &str) -> Vec<Versi
 /// Get the dependent's name and version from a node ID
 /// Returns (name, version) or None if parsing fails
 pub fn parse_node_id(node_id: &str) -> Option<(String, String)> {
-    // Format: "crate-name version (registry+...)"
-    if let Some(space_pos) = node_id.find(' ') {
-        let name = &node_id[..space_pos];
-        let rest = &node_id[space_pos + 1..];
-        if let Some(paren_pos) = rest.find(" (") {
-            let version = &rest[..paren_pos];
+    // Format: "source#name@version" (e.g., "registry+https://...#rgb@0.8.52")
+    if let Some(hash_pos) = node_id.find('#') {
+        let after_hash = &node_id[hash_pos + 1..];
+        if let Some(at_pos) = after_hash.find('@') {
+            let name = &after_hash[..at_pos];
+            let version = &after_hash[at_pos + 1..];
             return Some((name.to_string(), version.to_string()));
         }
     }
@@ -132,7 +131,7 @@ mod tests {
 
     #[test]
     fn test_parse_node_id() {
-        let node_id = "rgb 0.8.52 (registry+https://github.com/rust-lang/crates.io-index)";
+        let node_id = "registry+https://github.com/rust-lang/crates.io-index#rgb@0.8.52";
         let result = parse_node_id(node_id);
         assert_eq!(result, Some(("rgb".to_string(), "0.8.52".to_string())));
     }
