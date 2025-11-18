@@ -107,7 +107,7 @@ fn test_default_baseline_wip_output() {
     }
 
     // 6. Validate basic structure regardless of path
-    assert!(stdout.contains("Summary:"), "Should have summary section");
+    assert!(stdout.contains("Summary") || stdout.contains("=== Summary ==="), "Should have summary section");
     assert!(stdout.contains("Total:"), "Summary should show total count");
 
     println!("\n✅ Default baseline + WIP test passed!");

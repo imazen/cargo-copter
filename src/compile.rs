@@ -235,7 +235,7 @@ pub fn restore_cargo_toml(staging_path: &Path) -> Result<(), String> {
 }
 
 /// The type of compilation step being performed
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CompileStep {
     /// cargo fetch - download dependencies
     Fetch,
@@ -264,7 +264,7 @@ impl CompileStep {
 }
 
 /// Result of a compilation step
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CompileResult {
     pub step: CompileStep,
     pub success: bool,
@@ -538,7 +538,7 @@ impl VersionSource {
 }
 
 /// Three-step ICT (Install/Check/Test) result for a single version
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ThreeStepResult {
     /// Install step (cargo fetch) - always runs
     pub fetch: CompileResult,

@@ -54,7 +54,7 @@ pub struct SpanText {
 }
 
 /// A parsed diagnostic with extracted key information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Diagnostic {
     pub level: DiagnosticLevel,
     pub code: Option<String>,
@@ -63,7 +63,7 @@ pub struct Diagnostic {
     pub primary_span: Option<SpanInfo>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DiagnosticLevel {
     Error,
     Warning,
@@ -88,7 +88,7 @@ impl DiagnosticLevel {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SpanInfo {
     pub file_name: String,
     pub line: usize,

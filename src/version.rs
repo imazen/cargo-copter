@@ -8,14 +8,10 @@
 
 use crate::api;
 use crate::compile;
-use crate::download;
-use crate::manifest::{self, RevDep};
-use crate::toml_helpers;
+use crate::manifest;
 use log::debug;
-use semver::{Version, VersionReq};
-use std::fs;
+use semver::Version;
 use std::path::PathBuf;
-use tempfile::TempDir;
 
 /// Resolve a version keyword ("this", "latest", "latest-preview") or concrete version
 ///
@@ -99,104 +95,4 @@ pub fn resolve_latest_version(crate_name: &str, include_prerelease: bool) -> Res
     versions.sort();
 
     versions.pop().map(|v| v.to_string()).ok_or_else(|| "No versions found".to_string())
-}
-
-/// Resolve reverse dependency version (use provided version or latest from crates.io)
-pub fn resolve_rev_dep_version(name: String, version: Option<String>) -> Result<RevDep, String> {
-    // If version is provided, use it directly
-    if let Some(ver_str) = version {
-        debug!("using pinned version {} for {}", ver_str, name);
-        let vers = Version::parse(&ver_str)
-            .map_err(|e| format!("Invalid version: {}", e))?;
-        return Ok(RevDep { name, vers, resolved_version: None });
-    }
-
-    // Otherwise, resolve latest version from crates.io
-    debug!("resolving current version for {}", name);
-
-    let krate = api::get_client().get_crate(&name)
-        .map_err(|e| format!("Failed to fetch crate: {}", e))?;
-
-    // Pull out the version numbers and sort them
-    let versions = krate.versions.iter().filter_map(|r| Version::parse(&r.num).ok());
-    let mut versions = versions.collect::<Vec<_>>();
-    versions.sort();
-
-    versions.pop()
-        .map(|v| RevDep { name, vers: v, resolved_version: None })
-        .ok_or_else(|| "No versions found".to_string())
-}
-
-/// Check if a WIP version is compatible with a dependent's semver requirement
-///
-/// Downloads the dependent's Cargo.toml and checks if the WIP version
-/// satisfies the version requirement specified for our crate.
-pub fn check_version_compatibility(
-    rev_dep: &RevDep,
-    crate_name: &str,
-    wip_version: &str,
-) -> Result<bool, String> {
-    debug!("checking version compatibility for {} {}", rev_dep.name, rev_dep.vers);
-
-    // Download and cache the dependent's .crate file
-    let crate_handle = download::get_crate_handle(&rev_dep.name, &rev_dep.vers)
-        .map_err(|e| format!("Failed to download crate: {}", e))?;
-
-    // Create temp directory to extract Cargo.toml
-    let temp_dir = TempDir::new()
-        .map_err(|e| format!("Failed to create temp dir: {}", e))?;
-    let extract_dir = temp_dir.path().join("extracted");
-    fs::create_dir(&extract_dir)
-        .map_err(|e| format!("Failed to create extract dir: {}", e))?;
-
-    // Extract just the Cargo.toml
-    download::extract_cargo_toml(crate_handle.path(), &extract_dir)
-        .map_err(|e| format!("Failed to extract Cargo.toml: {}", e))?;
-
-    // Read and parse Cargo.toml
-    let toml_path = extract_dir.join("Cargo.toml");
-    let toml_str = manifest::load_string(&toml_path)?;
-    let value: toml::Value = toml::from_str(&toml_str)
-        .map_err(|e| format!("Failed to parse TOML: {}", e))?;
-
-    // Look for our crate in dependencies
-    let wip_ver = Version::parse(wip_version)
-        .map_err(|e| format!("Invalid WIP version: {}", e))?;
-
-    // Check [dependencies]
-    if let Some(deps) = value.get("dependencies").and_then(|v| v.as_table()) {
-        if let Some(req) = deps.get(crate_name) {
-            return check_requirement(req, &wip_ver);
-        }
-    }
-
-    // Check [dev-dependencies]
-    if let Some(deps) = value.get("dev-dependencies").and_then(|v| v.as_table()) {
-        if let Some(req) = deps.get(crate_name) {
-            return check_requirement(req, &wip_ver);
-        }
-    }
-
-    // Check [build-dependencies]
-    if let Some(deps) = value.get("build-dependencies").and_then(|v| v.as_table()) {
-        if let Some(req) = deps.get(crate_name) {
-            return check_requirement(req, &wip_ver);
-        }
-    }
-
-    // Crate not found in dependencies (shouldn't happen for reverse deps)
-    debug!("Warning: {} not found in {}'s dependencies", crate_name, rev_dep.name);
-    Ok(true) // Test anyway
-}
-
-/// Check if a version satisfies a TOML dependency requirement
-fn check_requirement(req: &toml::Value, wip_version: &Version) -> Result<bool, String> {
-    let req_str = toml_helpers::extract_requirement_string(req);
-
-    debug!("Checking if version {} satisfies requirement '{}'", wip_version, req_str);
-
-    let version_req = VersionReq::parse(&req_str)
-        .map_err(|e| format!("Invalid version requirement: {}", e))?;
-
-    Ok(version_req.matches(wip_version))
 }

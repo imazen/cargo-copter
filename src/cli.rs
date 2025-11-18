@@ -36,7 +36,7 @@ pub struct CliArgs {
     pub test_versions: Vec<String>,
 
     /// HTML report output path
-    #[arg(long, default_value = "copter-report.html")]
+    #[arg(long = "output-html", default_value = "copter-report.html")]
     pub output: PathBuf,
 
     /// Directory for staging unpacked crates (enables caching across runs)
