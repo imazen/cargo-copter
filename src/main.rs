@@ -12,13 +12,13 @@ mod api;
 mod cli;
 mod compile;
 mod console_format;
+mod download;
 mod error_extract;
 mod metadata;
 mod report;
 mod toml_helpers;
 mod types;
 
-use flate2::read::GzDecoder;
 use lazy_static::lazy_static;
 use log::debug;
 use semver::Version;
@@ -32,7 +32,6 @@ use std::process::Command;
 use std::string::FromUtf8Error;
 use std::sync::Mutex;
 use std::time::Duration;
-use tar::Archive;
 use tempfile::TempDir;
 use types::*;
 
@@ -752,33 +751,6 @@ fn load_string(path: &Path) -> Result<String, Error> {
 
 type RevDepName = String;
 
-fn crate_url(krate: &str, call: Option<&str>) -> String {
-    crate_url_with_parms(krate, call, &[])
-}
-
-fn crate_url_with_parms(krate: &str, call: Option<&str>, parms: &[(&str, &str)]) -> String {
-    let url = format!("https://crates.io/api/v1/crates/{}", krate);
-    let s = match call {
-        Some(c) => format!("{}/{}", url, c),
-        None => url,
-    };
-
-    if !parms.is_empty() {
-        let parms: Vec<String> = parms.iter().map(|&(k, v)| format!("{}={}", k, v)).collect();
-        let parms: String = parms.join("&");
-        format!("{}?{}", s, parms)
-    } else {
-        s
-    }
-}
-
-fn http_get_bytes(url: &str) -> Result<Vec<u8>, Error> {
-    let resp = ureq::get(url).set("User-Agent", USER_AGENT).call()?;
-    let len = resp.header("Content-Length").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
-    let mut data: Vec<u8> = Vec::with_capacity(len);
-    resp.into_reader().read_to_end(&mut data)?;
-    Ok(data)
-}
 
 #[derive(Debug, Clone)]
 struct RevDep {
@@ -1064,7 +1036,7 @@ fn extract_resolved_version(rev_dep: &RevDep, crate_name: &str, staging_dir: &Pa
     // Check if already unpacked
     if !staging_path.exists() {
         debug!("Unpacking {} to staging dir", rev_dep.name);
-        let crate_handle = get_crate_handle(rev_dep)?;
+        let crate_handle = download::get_crate_handle(&rev_dep.name, &rev_dep.vers)?;
         fs::create_dir_all(&staging_path)?;
         crate_handle.unpack_source_to(&staging_path)?;
     } else {
@@ -1344,16 +1316,16 @@ fn run_multi_version_test(
     let staging_path = config.staging_dir.join(format!("{}-{}", rev_dep.name, rev_dep.vers));
     if !staging_path.exists() {
         debug!("Unpacking {} to staging for multi-version test", rev_dep.name);
-        match get_crate_handle(&rev_dep) {
+        match download::get_crate_handle(&rev_dep.name, &rev_dep.vers) {
             Ok(handle) => {
                 if let Err(e) = fs::create_dir_all(&staging_path) {
                     return (TestResult::error(rev_dep, Error::IoError(e)), vec![]);
                 }
                 if let Err(e) = handle.unpack_source_to(&staging_path) {
-                    return (TestResult::error(rev_dep, e), vec![]);
+                    return (TestResult::error(rev_dep, Error::IoError(e)), vec![]);
                 }
             }
-            Err(e) => return (TestResult::error(rev_dep, e), vec![]),
+            Err(e) => return (TestResult::error(rev_dep, Error::IoError(e)), vec![]),
         }
     }
 
@@ -1405,7 +1377,7 @@ fn run_multi_version_test(
                     Some(dir_path)
                 }
                 compile::VersionSource::Published { version, .. } => {
-                    match download_and_unpack_base_crate_version(&config.crate_name, version, &config.staging_dir) {
+                    match download::download_and_unpack_crate(&config.crate_name, version, &config.staging_dir) {
                         Ok(path) => Some(path),
                         Err(e) => {
                             status(&format!("Warning: Failed to download {} {}: {}", config.crate_name, version, e));
@@ -1532,7 +1504,7 @@ fn check_version_compatibility(rev_dep: &RevDep, config: &Config) -> Result<bool
     debug!("checking version compatibility for {} {}", rev_dep.name, rev_dep.vers);
 
     // Download and cache the dependent's .crate file
-    let crate_handle = get_crate_handle(rev_dep)?;
+    let crate_handle = download::get_crate_handle(&rev_dep.name, &rev_dep.vers)?;
 
     // Create temp directory to extract Cargo.toml
     let temp_dir = TempDir::new()?;
@@ -1540,7 +1512,7 @@ fn check_version_compatibility(rev_dep: &RevDep, config: &Config) -> Result<bool
     fs::create_dir(&extract_dir)?;
 
     // Extract just the Cargo.toml
-    extract_cargo_toml(&crate_handle.0, &extract_dir)?;
+    download::extract_cargo_toml(crate_handle.path(), &extract_dir)?;
 
     // Read and parse Cargo.toml
     let toml_path = extract_dir.join("Cargo.toml");
@@ -1595,7 +1567,7 @@ fn extract_dependency_requirement(rev_dep: &RevDep, crate_name: &str) -> Option<
     debug!("Extracting dependency requirement for {} from {}", crate_name, rev_dep.name);
 
     // Download and cache the dependent's .crate file
-    let crate_handle = match get_crate_handle(rev_dep) {
+    let crate_handle = match download::get_crate_handle(&rev_dep.name, &rev_dep.vers) {
         Ok(h) => h,
         Err(e) => {
             debug!("Failed to get crate handle for {}: {}", rev_dep.name, e);
@@ -1618,7 +1590,7 @@ fn extract_dependency_requirement(rev_dep: &RevDep, crate_name: &str) -> Option<
     }
 
     // Extract just the Cargo.toml
-    if let Err(e) = extract_cargo_toml(&crate_handle.0, &extract_dir) {
+    if let Err(e) = download::extract_cargo_toml(crate_handle.path(), &extract_dir) {
         debug!("Failed to extract Cargo.toml: {}", e);
         return None;
     }
@@ -1683,128 +1655,6 @@ fn resolve_latest_version(crate_name: &str, include_prerelease: bool) -> Result<
     versions.pop().map(|v| v.to_string()).ok_or(Error::NoCrateVersions)
 }
 
-struct CrateHandle(PathBuf);
-
-fn get_crate_handle(rev_dep: &RevDep) -> Result<CrateHandle, Error> {
-    let cache_path = Path::new("./.copter/crate-cache");
-    let ref crate_dir = cache_path.join(&rev_dep.name);
-    (fs::create_dir_all(crate_dir)?);
-    let crate_file = crate_dir.join(format!("{}-{}.crate", rev_dep.name, rev_dep.vers));
-    // FIXME: Path::exists() is unstable so just opening the file
-    let crate_file_exists = File::open(&crate_file).is_ok();
-    if !crate_file_exists {
-        let url = crate_url(&rev_dep.name, Some(&format!("{}/download", rev_dep.vers)));
-        let body = http_get_bytes(&url)?;
-        // FIXME: Should move this into place atomically
-        let mut file = File::create(&crate_file)?;
-        (file.write_all(&body)?);
-        (file.flush()?);
-    }
-
-    return Ok(CrateHandle(crate_file));
-}
-
-/// Download and unpack a specific version of the base crate for patching
-/// Returns the path to the unpacked source
-fn download_and_unpack_base_crate_version(
-    crate_name: &str,
-    version: &str,
-    staging_dir: &Path,
-) -> Result<PathBuf, Error> {
-    debug!("Downloading and unpacking {} version {}", crate_name, version);
-
-    // version is already validated as concrete semver at input time
-    // Create a pseudo-RevDep for downloading
-    let vers = Version::parse(version).map_err(|e| Error::SemverError(e))?;
-    let pseudo_dep = RevDep { name: RevDepName::from(crate_name.to_string()), vers, resolved_version: None };
-
-    // Download the crate
-    let crate_handle = get_crate_handle(&pseudo_dep)?;
-
-    // Unpack to staging directory
-    let unpack_path = staging_dir.join(format!("base-{}-{}", crate_name, version));
-    if !unpack_path.exists() {
-        fs::create_dir_all(&unpack_path)?;
-        crate_handle.unpack_source_to(&unpack_path)?;
-        debug!("Unpacked {} {} to {:?}", crate_name, version, unpack_path);
-    } else {
-        debug!("Using cached base crate at {:?}", unpack_path);
-    }
-
-    Ok(unpack_path)
-}
-
-/// Extract all files from a .crate file (gzipped tar) with --strip-components=1 behavior
-fn extract_crate_archive(crate_file: &Path, dest_dir: &Path) -> Result<(), Error> {
-    let file = File::open(crate_file)?;
-    let decoder = GzDecoder::new(file);
-    let mut archive = Archive::new(decoder);
-
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let path = entry.path()?;
-
-        // Strip the first path component (equivalent to --strip-components=1)
-        let stripped_pathbuf = path.components().skip(1).collect::<PathBuf>();
-        if stripped_pathbuf.as_os_str().is_empty() {
-            continue; // Skip entries with no path after stripping
-        }
-
-        let dest_path = dest_dir.join(&stripped_pathbuf);
-
-        // Ensure parent directory exists
-        if let Some(parent) = dest_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        // Extract the entry
-        entry.unpack(&dest_path)?;
-    }
-
-    Ok(())
-}
-
-/// Extract only Cargo.toml from a .crate file with --strip-components=1 behavior
-fn extract_cargo_toml(crate_file: &Path, dest_dir: &Path) -> Result<(), Error> {
-    let file = File::open(crate_file)?;
-    let decoder = GzDecoder::new(file);
-    let mut archive = Archive::new(decoder);
-
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let path = entry.path()?;
-
-        // Check if this is a Cargo.toml file (equivalent to --wildcards */Cargo.toml)
-        if path.file_name() != Some(std::ffi::OsStr::new("Cargo.toml")) {
-            continue;
-        }
-
-        // Strip the first path component (equivalent to --strip-components=1)
-        let stripped_pathbuf = path.components().skip(1).collect::<PathBuf>();
-        if stripped_pathbuf.as_os_str().is_empty() {
-            continue;
-        }
-
-        let dest_path = dest_dir.join(&stripped_pathbuf);
-
-        // Ensure parent directory exists
-        if let Some(parent) = dest_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        // Extract the entry
-        entry.unpack(&dest_path)?;
-    }
-
-    Ok(())
-}
-
-impl CrateHandle {
-    fn unpack_source_to(&self, path: &Path) -> Result<(), Error> {
-        debug!("unpacking {:?} to {:?}", self.0, path);
-        extract_crate_archive(&self.0, path)
-    }
-}
 
 fn status_lock<F>(f: F)
 where
