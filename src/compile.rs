@@ -356,46 +356,85 @@ fn verify_dependency_version(crate_path: &Path, dep_name: &str) -> Option<String
     None
 }
 
-/// Extract the version requirement spec for a dependency from Cargo.toml
+/// Extract the version requirement spec for a dependency using cargo metadata
 /// Returns None if the dependency is not found
 fn extract_dependency_spec(crate_path: &Path, dep_name: &str) -> Result<Option<String>, String> {
-    let cargo_toml_path = crate_path.join("Cargo.toml");
-    let mut content = String::new();
+    debug!("Extracting spec for '{}' from {:?}", dep_name, crate_path);
 
-    // Read Cargo.toml
-    let mut file = fs::File::open(&cargo_toml_path).map_err(|e| format!("Failed to open Cargo.toml: {}", e))?;
-    file.read_to_string(&mut content).map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
-    drop(file);
+    // Run cargo metadata to get dependency specs
+    let output = Command::new("cargo")
+        .args(&["metadata", "--format-version=1"])
+        .current_dir(crate_path)
+        .output()
+        .map_err(|e| format!("Failed to run cargo metadata: {}", e))?;
 
-    // Parse as TOML
-    let doc: toml_edit::DocumentMut = content.parse().map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("cargo metadata failed: {}", stderr.trim()));
+    }
 
-    // Check all dependency sections
-    let sections = vec!["dependencies", "dev-dependencies", "build-dependencies"];
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed = metadata::parse_metadata(&stdout)?;
 
-    for section in sections {
-        if let Some(deps) = doc.get(section).and_then(|s| s.as_table()) {
-            if let Some(dep) = deps.get(dep_name) {
-                // Extract version spec
-                if let Some(version_str) = dep.as_str() {
-                    // Simple string version: "rgb = \"0.8.50\""
-                    return Ok(Some(version_str.to_string()));
-                } else if let Some(dep_table) = dep.as_inline_table() {
-                    // Inline table: rgb = { version = "0.8.50", features = [] }
-                    if let Some(version) = dep_table.get("version").and_then(|v| v.as_str()) {
-                        return Ok(Some(version.to_string()));
-                    }
-                } else if let Some(dep_table) = dep.as_table_like() {
-                    // Full table format
-                    if let Some(version) = dep_table.get("version").and_then(|v| v.as_str()) {
-                        return Ok(Some(version.to_string()));
+    // Get the root package (the dependent being tested)
+    let root_package_id = if let Some(resolve) = &parsed.resolve {
+        resolve.get("root").and_then(|r| r.as_str())
+    } else {
+        None
+    };
+
+    if let Some(root_id) = root_package_id {
+        // Use the metadata module to get the spec
+        match metadata::get_version_spec(&parsed, root_id, dep_name) {
+            Ok(spec) if spec != "?" => {
+                debug!("  Extracted spec: {}", spec);
+                return Ok(Some(spec));
+            }
+            Ok(_) => debug!("  Spec is '?', dependency not found in root package"),
+            Err(e) => debug!("  Failed to get spec: {}", e),
+        }
+    }
+
+    Ok(None)
+}
+
+/// Extract spec from Cargo.toml directly (fallback when cargo metadata fails)
+/// Used for broken packages where fetch fails
+fn extract_spec_from_toml(crate_path: &Path, dep_name: &str) -> Result<Option<String>, String> {
+    use std::fs;
+    use toml_edit::DocumentMut;
+
+    debug!("Extracting spec from Cargo.toml for '{}' in {:?}", dep_name, crate_path);
+
+    let toml_path = crate_path.join("Cargo.toml");
+    let content = fs::read_to_string(&toml_path)
+        .map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
+
+    let doc: DocumentMut = content.parse()
+        .map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
+
+    // Check [dependencies] section
+    if let Some(deps) = doc.get("dependencies").and_then(|s| s.as_table_like()) {
+        if let Some(dep_value) = deps.get(dep_name) {
+            // Handle different formats:
+            // 1. String: rgb = "0.8.27"
+            if let Some(version_str) = dep_value.as_str() {
+                return Ok(Some(version_str.to_string()));
+            }
+
+            // 2. Table: [dependencies.rgb] or inline table
+            if let Some(table) = dep_value.as_table_like() {
+                if let Some(version_value) = table.get("version") {
+                    if let Some(version_str) = version_value.as_str() {
+                        return Ok(Some(version_str.to_string()));
                     }
                 }
             }
         }
     }
 
-    Ok(None) // Dependency not found in any section
+    // Not found
+    Ok(None)
 }
 
 /// How to apply a dependency override
@@ -821,20 +860,27 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
     let actual_version = if fetch.success { verify_dependency_version(crate_path, base_crate_name) } else { None };
 
     // Extract original requirement spec from metadata if not provided
-    let original_requirement = if original_requirement.is_none() && fetch.success {
-        // Only panic if we're NOT in force mode (where Cargo.toml has been modified)
-        // In force mode, the spec is replaced with a path, so extraction will fail
-        let extracted = extract_dependency_spec(crate_path, base_crate_name).ok().flatten();
-        if extracted.is_none() && !force_versions {
-            panic!(
-                "Failed to extract dependency spec for '{}' from {:?}/Cargo.toml. \
-                This should never happen if fetch succeeded in non-force mode. \
-                The dependency must exist in the manifest.",
-                base_crate_name,
-                crate_path
-            );
+    let original_requirement = if original_requirement.is_none() {
+        if fetch.success {
+            // Fetch succeeded - extract from metadata
+            let extracted = extract_dependency_spec(crate_path, base_crate_name).ok().flatten();
+            debug!("Extracted spec (fetch succeeded): {:?} (force={})", extracted, force_versions);
+            if extracted.is_none() && !force_versions {
+                panic!(
+                    "Failed to extract dependency spec for '{}' from {:?}. \
+                    This should never happen if fetch succeeded in non-force mode. \
+                    The dependency must exist in the manifest.",
+                    base_crate_name,
+                    crate_path
+                );
+            }
+            extracted
+        } else {
+            // Fetch failed - try to extract from Cargo.toml directly (fallback for broken dependents)
+            let extracted = extract_spec_from_toml(crate_path, base_crate_name).ok().flatten();
+            debug!("Extracted spec (fetch failed, from Cargo.toml): {:?}", extracted);
+            extracted
         }
-        extracted
     } else {
         original_requirement.clone()
     };

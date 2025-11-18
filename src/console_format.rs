@@ -295,8 +295,8 @@ impl TableWidths {
         let available = terminal_width.saturating_sub(borders);
 
         // Use fixed widths for columns with known/predictable values
-        // Offered: use provided width or default to 25
-        let offered = offered_width.unwrap_or(25);
+        // Offered: use provided width or default to 23
+        let offered = offered_width.unwrap_or(23);
         // Spec: "^0.8.52" or "→ =this" max ~12 chars
         let spec = 12;
         // Resolved: "0.8.91-preview 📦" max ~18 chars
@@ -319,19 +319,19 @@ impl TableWidths {
     pub fn calculate_offered_width(versions: &[String], _display_version: &str, force_versions: bool) -> usize {
         let mut max_width = "- baseline".len(); // 10 chars
 
-        // Forced marker is 6 chars: " [≠→!]"
-        let forced_width = if force_versions { 6 } else { 0 };
+        // Forced marker is 2 chars: "→!"
+        let forced_width = if force_versions { 2 } else { 0 };
 
         // Check all test versions
         for version in versions {
-            // Format: "{icon} {resolution}{version}[ [≠→!]]"
+            // Format: "{icon} {resolution}{version}[→!]"
             // Icon (1) + space (1) + resolution (1) + version + optional forced marker
             let width = 1 + 1 + 1 + version.len() + forced_width;
             max_width = max_width.max(width);
         }
 
-        // Add generous padding for comfortable spacing (6 chars breathing room)
-        max_width + 6
+        // Add 2 for cell padding (accounts for the -2 when truncating)
+        max_width + 2
     }
 }
 
@@ -369,7 +369,7 @@ pub fn display_width(s: &str) -> usize {
     UnicodeWidthStr::width(s)
 }
 
-/// Truncate and pad string to exact width
+/// Truncate and pad string to exact width (truncate from end, showing start)
 pub fn truncate_with_padding(s: &str, width: usize) -> String {
     let display_w = display_width(s);
 
@@ -397,6 +397,58 @@ pub fn truncate_with_padding(s: &str, width: usize) -> String {
             result.push_str("...");
             current_width += 3;
         }
+
+        // Pad if needed
+        if current_width < width {
+            result.push_str(&" ".repeat(width - current_width));
+        }
+
+        result
+    } else {
+        // Pad with spaces to reach the width
+        let padding = width - display_w;
+        format!("{}{}", s, " ".repeat(padding))
+    }
+}
+
+/// Truncate and pad string to exact width (truncate from start, showing end)
+/// Used for columns where the end is more important (paths, package names, etc.)
+pub fn truncate_from_start_with_padding(s: &str, width: usize) -> String {
+    let display_w = display_width(s);
+
+    if display_w > width {
+        // Truncate from start
+        let chars: Vec<char> = s.chars().collect();
+
+        // Reserve space for "..."
+        let target_width = if width >= 3 { width - 3 } else { width };
+
+        // Calculate from the end
+        let mut result_chars = Vec::new();
+        let mut current_width = 0;
+
+        for c in chars.iter().rev() {
+            let c_width = UnicodeWidthChar::width(*c).unwrap_or(1);
+
+            if current_width + c_width > target_width {
+                break;
+            }
+
+            result_chars.push(*c);
+            current_width += c_width;
+        }
+
+        // Reverse back to correct order
+        result_chars.reverse();
+
+        let mut result = if width >= 3 {
+            String::from("...")
+        } else {
+            String::new()
+        };
+
+        result.extend(result_chars);
+        current_width += if width >= 3 { 3 } else { 0 };
 
         // Pad if needed
         if current_width < width {

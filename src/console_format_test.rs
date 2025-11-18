@@ -89,8 +89,11 @@ mod tests {
 
         let width = TableWidths::calculate_offered_width(&versions, "0.8.52", true);
 
-        // Should account for forced marker " [≠→!]" = 6 chars
-        assert!(width >= 3 + "0.8.50".len() + 6);
+        // Should account for forced marker "→!" = 2 chars + cell padding = 2
+        // Format: "{icon} {resolution}{version}→!"
+        // Icon (1) + space (1) + resolution (1) + version (6) + forced (2) + padding (2) = 13
+        let expected = 1 + 1 + 1 + "0.8.50".len() + 2 + 2;
+        assert_eq!(width, expected);
     }
 
     #[test]

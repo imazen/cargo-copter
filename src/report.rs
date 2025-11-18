@@ -66,7 +66,7 @@ pub enum OfferedCell {
         icon: StatusIcon,
         resolution: Resolution,
         version: String,
-        forced: bool, // adds [≠→!] suffix if true
+        forced: bool, // adds →! suffix if true
     },
 }
 
@@ -115,7 +115,7 @@ impl OfferedCell {
             OfferedCell::Tested { icon, resolution, version, forced } => {
                 let mut result = format!("{} {}{}", icon.as_str(), resolution.as_str(), version);
                 if *forced {
-                    result.push_str(" [≠→!]");
+                    result.push_str("→!");
                 }
                 result
             }
@@ -799,9 +799,9 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
 
     // Main row
     let offered_display = console_format::truncate_with_padding(&formatted.offered, w.offered - 2);
-    let spec_display = console_format::truncate_with_padding(&formatted.spec, w.spec - 2);
-    let resolved_display = console_format::truncate_with_padding(&formatted.resolved, w.resolved - 2);
-    let dependent_display = console_format::truncate_with_padding(&formatted.dependent, w.dependent - 2);
+    let spec_display = console_format::truncate_from_start_with_padding(&formatted.spec, w.spec - 2);
+    let resolved_display = console_format::truncate_from_start_with_padding(&formatted.resolved, w.resolved - 2);
+    let dependent_display = console_format::truncate_from_start_with_padding(&formatted.dependent, w.dependent - 2);
     let result_display = format!("{:>12} {:>5}", formatted.result, formatted.time);
     let result_display = console_format::truncate_with_padding(&result_display, w.result - 2);
 
@@ -859,11 +859,11 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
         for (i, (spec, resolved, dependent)) in formatted.multi_version_rows.iter().enumerate() {
             let prefix = if i == last_idx { "└─" } else { "├─" };
             let spec_display = format!("{} {}", prefix, spec);
-            let spec_display = console_format::truncate_with_padding(&spec_display, w.spec - 2);
+            let spec_display = console_format::truncate_from_start_with_padding(&spec_display, w.spec - 2);
             let resolved_display = format!("{} {}", prefix, resolved);
-            let resolved_display = console_format::truncate_with_padding(&resolved_display, w.resolved - 2);
+            let resolved_display = console_format::truncate_from_start_with_padding(&resolved_display, w.resolved - 2);
             let dependent_display = format!("{} {}", prefix, dependent);
-            let dependent_display = console_format::truncate_with_padding(&dependent_display, w.dependent - 2);
+            let dependent_display = console_format::truncate_from_start_with_padding(&dependent_display, w.dependent - 2);
 
             output.push_str(&format!(
                 "│{:width$}│ {} │ {} │ {} │{:w_result$}│\n",
