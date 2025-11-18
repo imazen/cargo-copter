@@ -15,6 +15,7 @@ mod console_format;
 mod download;
 mod error_extract;
 mod git;
+mod manifest;
 mod metadata;
 mod report;
 mod toml_helpers;
@@ -23,6 +24,7 @@ mod ui;
 
 use lazy_static::lazy_static;
 use log::debug;
+use manifest::RevDep;
 use semver::Version;
 use std::env;
 use std::error::Error as StdError;
@@ -392,7 +394,7 @@ fn run(args: cli::CliArgs, config: Config) -> Result<Vec<TestResult>, Error> {
     };
 
     // Determine which dependents to test (returns Vec<(name, optional_version)>)
-    let rev_deps: Vec<(RevDepName, Option<String>)> = if !args.dependent_paths.is_empty() {
+    let rev_deps: Vec<(String, Option<String>)> = if !args.dependent_paths.is_empty() {
         // Local paths mode - convert to rev dep names (no version spec)
         args.dependent_paths
             .iter()
@@ -640,7 +642,8 @@ fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
             debug!("Using --path for 'this' version: {:?}", manifest);
 
             // Extract version from the manifest
-            let (manifest_crate_name, manifest_version) = get_crate_info(&manifest)?;
+            let (manifest_crate_name, manifest_version) = manifest::get_crate_info(&manifest)
+                .map_err(|e| Error::ProcessError(e))?;
 
             // Verify crate names match
             if manifest_crate_name != *crate_name {
@@ -681,7 +684,8 @@ fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
         };
         debug!("Using manifest {:?}", manifest);
 
-        let (crate_name, version) = get_crate_info(&manifest)?;
+        let (crate_name, version) = manifest::get_crate_info(&manifest)
+            .map_err(|e| Error::ProcessError(e))?;
         (crate_name, version, CrateOverride::Source(manifest))
     };
 
@@ -701,44 +705,7 @@ fn get_config(args: &cli::CliArgs) -> Result<Config, Error> {
     })
 }
 
-fn get_crate_info(manifest_path: &Path) -> Result<(String, String), Error> {
-    let toml_str = load_string(manifest_path)?;
-    let value: toml::Value = toml::from_str(&toml_str)?;
 
-    match value.get("package") {
-        Some(toml::Value::Table(t)) => {
-            let name = match t.get("name") {
-                Some(toml::Value::String(s)) => s.clone(),
-                _ => return Err(Error::ManifestName),
-            };
-
-            let version = match t.get("version") {
-                Some(toml::Value::String(s)) => s.clone(),
-                _ => "0.0.0".to_string(), // Default if no version
-            };
-
-            Ok((name, version))
-        }
-        _ => Err(Error::ManifestName),
-    }
-}
-
-fn load_string(path: &Path) -> Result<String, Error> {
-    let mut file = File::open(path)?;
-    let mut s = String::new();
-    (file.read_to_string(&mut s)?);
-    Ok(s)
-}
-
-type RevDepName = String;
-
-
-#[derive(Debug, Clone)]
-struct RevDep {
-    name: RevDepName,
-    vers: Version,
-    resolved_version: Option<String>, // Exact version from dependent's Cargo.lock
-}
 
 #[derive(Debug)]
 struct TestResult {
@@ -994,7 +961,7 @@ impl TestResult {
 
 fn run_test_multi_version(
     config: Config,
-    rev_dep: RevDepName,
+    rev_dep: String,
     version: Option<String>,
     test_versions: Vec<compile::VersionSource>,
     force_local: bool,
@@ -1230,7 +1197,7 @@ fn outcome_to_row(
 /// 3. "this" (local WIP) or "latest" (if no local source)
 fn run_multi_version_test(
     config: &Config,
-    rev_dep: RevDepName,
+    rev_dep: String,
     dependent_version: Option<String>,
     mut test_versions: Vec<compile::VersionSource>,
     force_local: bool, // Whether local "this" versions should be forced
@@ -1264,7 +1231,7 @@ fn run_multi_version_test(
     };
 
     // Extract the original requirement spec from the dependent's Cargo.toml
-    let original_requirement = extract_dependency_requirement(&rev_dep, &config.crate_name);
+    let original_requirement = manifest::extract_dependency_requirement(&rev_dep, &config.crate_name);
 
     // Add baseline at the front (always non-forced)
     // IMPORTANT: Don't remove duplicates - if user specified same version in --force-versions,
@@ -1497,7 +1464,8 @@ fn check_version_compatibility(rev_dep: &RevDep, config: &Config) -> Result<bool
 
     // Read and parse Cargo.toml
     let toml_path = extract_dir.join("Cargo.toml");
-    let toml_str = load_string(&toml_path)?;
+    let toml_str = manifest::load_string(&toml_path)
+        .map_err(|e| Error::ProcessError(e))?;
     let value: toml::Value = toml::from_str(&toml_str)?;
 
     // Look for our crate in dependencies
@@ -1543,60 +1511,8 @@ fn check_requirement(req: &toml::Value, wip_version: &Version) -> Result<bool, E
 }
 
 /// Extract the original requirement spec for our crate from a dependent's Cargo.toml
-/// Returns the requirement string (e.g., "^0.8.52") if found
-fn extract_dependency_requirement(rev_dep: &RevDep, crate_name: &str) -> Option<String> {
-    debug!("Extracting dependency requirement for {} from {}", crate_name, rev_dep.name);
 
-    // Download and cache the dependent's .crate file
-    let crate_handle = match download::get_crate_handle(&rev_dep.name, &rev_dep.vers) {
-        Ok(h) => h,
-        Err(e) => {
-            debug!("Failed to get crate handle for {}: {}", rev_dep.name, e);
-            return None;
-        }
-    };
-
-    // Create temp directory to extract Cargo.toml
-    let temp_dir = match TempDir::new() {
-        Ok(d) => d,
-        Err(e) => {
-            debug!("Failed to create temp dir: {}", e);
-            return None;
-        }
-    };
-
-    let extract_dir = temp_dir.path().join("extracted");
-    if fs::create_dir(&extract_dir).is_err() {
-        return None;
-    }
-
-    // Extract just the Cargo.toml
-    if let Err(e) = download::extract_cargo_toml(crate_handle.path(), &extract_dir) {
-        debug!("Failed to extract Cargo.toml: {}", e);
-        return None;
-    }
-
-    // Read and parse Cargo.toml
-    let toml_path = extract_dir.join("Cargo.toml");
-    let value = match toml_helpers::load_cargo_toml(&toml_path) {
-        Ok(v) => v,
-        Err(e) => {
-            debug!("{}", e);
-            return None;
-        }
-    };
-
-    // Use helper to find dependency requirement
-    let result = toml_helpers::find_dependency_requirement(&value, crate_name);
-    if let Some(ref req) = result {
-        debug!("Found requirement: {}", req);
-    } else {
-        debug!("No requirement found for {} in {}'s Cargo.toml", crate_name, rev_dep.name);
-    }
-    result
-}
-
-fn resolve_rev_dep_version(name: RevDepName, version: Option<String>) -> Result<RevDep, Error> {
+fn resolve_rev_dep_version(name: String, version: Option<String>) -> Result<RevDep, Error> {
     // If version is provided, use it directly
     if let Some(ver_str) = version {
         debug!("using pinned version {} for {}", ver_str, name);
