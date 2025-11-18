@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use log::{debug, warn};
 use std::env;
 use std::fs::{self, OpenOptions};
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -354,6 +354,48 @@ fn verify_dependency_version(crate_path: &Path, dep_name: &str) -> Option<String
 
     debug!("Could not find {} in dependency graph", dep_name);
     None
+}
+
+/// Extract the version requirement spec for a dependency from Cargo.toml
+/// Returns None if the dependency is not found
+fn extract_dependency_spec(crate_path: &Path, dep_name: &str) -> Result<Option<String>, String> {
+    let cargo_toml_path = crate_path.join("Cargo.toml");
+    let mut content = String::new();
+
+    // Read Cargo.toml
+    let mut file = fs::File::open(&cargo_toml_path).map_err(|e| format!("Failed to open Cargo.toml: {}", e))?;
+    file.read_to_string(&mut content).map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
+    drop(file);
+
+    // Parse as TOML
+    let doc: toml_edit::DocumentMut = content.parse().map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
+
+    // Check all dependency sections
+    let sections = vec!["dependencies", "dev-dependencies", "build-dependencies"];
+
+    for section in sections {
+        if let Some(deps) = doc.get(section).and_then(|s| s.as_table()) {
+            if let Some(dep) = deps.get(dep_name) {
+                // Extract version spec
+                if let Some(version_str) = dep.as_str() {
+                    // Simple string version: "rgb = \"0.8.50\""
+                    return Ok(Some(version_str.to_string()));
+                } else if let Some(dep_table) = dep.as_inline_table() {
+                    // Inline table: rgb = { version = "0.8.50", features = [] }
+                    if let Some(version) = dep_table.get("version").and_then(|v| v.as_str()) {
+                        return Ok(Some(version.to_string()));
+                    }
+                } else if let Some(dep_table) = dep.as_table_like() {
+                    // Full table format
+                    if let Some(version) = dep_table.get("version").and_then(|v| v.as_str()) {
+                        return Ok(Some(version.to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(None) // Dependency not found in any section
 }
 
 /// How to apply a dependency override
@@ -778,6 +820,25 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
     // Verify the actual version after fetch
     let actual_version = if fetch.success { verify_dependency_version(crate_path, base_crate_name) } else { None };
 
+    // Extract original requirement spec from metadata if not provided
+    let original_requirement = if original_requirement.is_none() && fetch.success {
+        // Only panic if we're NOT in force mode (where Cargo.toml has been modified)
+        // In force mode, the spec is replaced with a path, so extraction will fail
+        let extracted = extract_dependency_spec(crate_path, base_crate_name).ok().flatten();
+        if extracted.is_none() && !force_versions {
+            panic!(
+                "Failed to extract dependency spec for '{}' from {:?}/Cargo.toml. \
+                This should never happen if fetch succeeded in non-force mode. \
+                The dependency must exist in the manifest.",
+                base_crate_name,
+                crate_path
+            );
+        }
+        extracted
+    } else {
+        original_requirement.clone()
+    };
+
     if fetch.failed() {
         // Log failure with diagnostics
         if let (Some(ref dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
@@ -802,7 +863,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
             actual_version,
             expected_version,
             forced_version: force_versions,
-            original_requirement: original_requirement.clone(),
+            original_requirement,
             all_crate_versions: vec![],
         });
     }

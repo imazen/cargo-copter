@@ -16,13 +16,12 @@ mod tests {
         assert_eq!(row.primary.spec, "^0.8.0");
     }
 
-    /// Test that spec falls back to "?" only when original_requirement is None
+    /// Test that spec panics when original_requirement is None (no longer allowed)
     #[test]
-    fn test_spec_fallback_to_question_mark() {
+    #[should_panic(expected = "original_requirement is None")]
+    fn test_spec_panics_when_none() {
         let result = create_test_result_with_requirement_none();
-        let row = test_result_to_offered_row(&result);
-
-        assert_eq!(row.primary.spec, "?", "Spec should be '?' when original_requirement is None");
+        let _row = test_result_to_offered_row(&result); // Should panic
     }
 
     /// Test that baseline rows have no offered version

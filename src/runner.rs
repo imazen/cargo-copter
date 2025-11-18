@@ -45,6 +45,10 @@ where
         };
 
         let baseline_passed = baseline_result.execution.is_success();
+
+        // Extract the spec from baseline for use in offered version tests
+        let baseline_spec_requirement = baseline_result.execution.original_requirement.clone();
+
         on_result(&baseline_result); // Stream the result immediately
         results.push(baseline_result);
 
@@ -54,8 +58,8 @@ where
 
             debug!("Testing {} against {}", base_version.display(), dependent.display());
 
-            // Run the three-step test
-            let execution = run_single_test(base_spec, dependent_spec, &matrix)?;
+            // Run the three-step test, passing the baseline spec requirement
+            let execution = run_single_test_with_spec(base_spec, dependent_spec, &matrix, baseline_spec_requirement.clone())?;
 
             let result = TestResult {
                 base_version: base_version.clone(),
@@ -106,6 +110,16 @@ fn run_single_test(
     dependent_spec: &VersionSpec,
     matrix: &TestMatrix,
 ) -> Result<compile::ThreeStepResult, String> {
+    run_single_test_with_spec(base_spec, dependent_spec, matrix, None)
+}
+
+/// Run a single test with an optional pre-extracted spec requirement
+fn run_single_test_with_spec(
+    base_spec: &VersionSpec,
+    dependent_spec: &VersionSpec,
+    matrix: &TestMatrix,
+    original_requirement: Option<String>,
+) -> Result<compile::ThreeStepResult, String> {
     let base_version = &base_spec.crate_ref;
     let dependent = &dependent_spec.crate_ref;
 
@@ -151,7 +165,7 @@ fn run_single_test(
         .with_version_info(
             Some(base_version_str.clone()),
             base_spec.override_mode == OverrideMode::Force,
-            None, // original_requirement - will be extracted by compile module
+            original_requirement, // Use provided spec from baseline test (if any)
         );
 
     // Prepare override path if needed (download registry versions)

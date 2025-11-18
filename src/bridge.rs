@@ -15,10 +15,28 @@ pub fn test_result_to_offered_row(result: &TestResult) -> OfferedRow {
     let dependent_version_str = result.dependent.version.display();
 
     // Create primary DependencyRef
+    let spec = result.execution.original_requirement.clone().unwrap_or_else(|| {
+        panic!(
+            "original_requirement is None for dependent '{}'. \
+            This should never happen - spec extraction must have failed. \
+            Check compile::extract_dependency_spec and ensure it runs after fetch.",
+            result.dependent.name
+        )
+    });
+
+    // Additional safety check - spec should never be "?"
+    if spec == "?" {
+        panic!(
+            "Spec resolved to '?' for dependent '{}'. \
+            This indicates a bug in spec extraction logic.",
+            result.dependent.name
+        );
+    }
+
     let primary = DependencyRef {
         dependent_name: result.dependent.name.clone(),
         dependent_version: dependent_version_str.clone(),
-        spec: result.execution.original_requirement.clone().unwrap_or_else(|| "?".to_string()),
+        spec,
         resolved_version: result.execution.actual_version.clone().unwrap_or_else(|| base_version_str.clone()),
         resolved_source: match result.base_version.source {
             CrateSource::Registry => VersionSource::CratesIo,
