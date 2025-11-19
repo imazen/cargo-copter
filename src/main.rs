@@ -55,6 +55,11 @@ fn main() {
         }
     }
 
+    // Set console width override if specified (for testing)
+    if let Some(width) = args.console_width {
+        console_format::set_console_width(width);
+    }
+
     // Build test matrix
     let matrix = match config::build_test_matrix(&args) {
         Ok(m) => m,

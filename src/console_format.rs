@@ -337,6 +337,11 @@ impl TableWidths {
 
 /// Get terminal width or default to DEFAULT_TERMINAL_WIDTH
 fn get_terminal_width() -> usize {
+    // Check if width override is set
+    if let Some(width) = OVERRIDE_WIDTH.get() {
+        return *width;
+    }
+
     if let Some((Width(w), _)) = terminal_size() {
         w as usize
     } else {
@@ -346,6 +351,12 @@ fn get_terminal_width() -> usize {
 
 // Table widths - initialized once with actual version data
 static WIDTHS: OnceLock<TableWidths> = OnceLock::new();
+static OVERRIDE_WIDTH: OnceLock<usize> = OnceLock::new();
+
+/// Set console width override (for testing)
+pub fn set_console_width(width: usize) {
+    let _ = OVERRIDE_WIDTH.set(width);
+}
 
 /// Initialize table widths based on versions being tested
 pub fn init_table_widths(versions: &[String], display_version: &str, force_versions: bool) {

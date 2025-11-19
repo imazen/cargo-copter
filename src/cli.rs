@@ -73,6 +73,10 @@ pub struct CliArgs {
     /// By default, each forced version is also tested in normal patch mode
     #[arg(long)]
     pub skip_normal_testing: bool,
+
+    /// Override console width for testing (default: auto-detect)
+    #[arg(long, value_name = "COLUMNS")]
+    pub console_width: Option<usize>,
 }
 
 impl CliArgs {
