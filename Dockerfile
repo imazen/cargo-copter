@@ -11,7 +11,7 @@
 #     cargo-copter:latest --crate rgb --top-dependents 5
 
 # Stage 1: Builder
-FROM rust:1.83-slim AS builder
+FROM rust:1.92-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && \
@@ -37,7 +37,7 @@ RUN cargo build --release --locked && \
 RUN ./target/release/cargo-copter --version || echo "Built successfully"
 
 # Stage 2: Runtime
-FROM rust:1.83-slim
+FROM rust:1.92-slim
 
 # Install runtime dependencies (needed for compiling tested crates)
 RUN apt-get update && \
