@@ -1,6 +1,15 @@
 use clap::Parser;
 use std::path::PathBuf;
 
+/// Get the default cache directory for cargo-copter
+/// Uses platform-specific cache directories:
+/// - Linux: ~/.cache/cargo-copter
+/// - macOS: ~/Library/Caches/cargo-copter
+/// - Windows: %LOCALAPPDATA%/cargo-copter
+pub fn default_cache_dir() -> PathBuf {
+    dirs::cache_dir().map(|p| p.join("cargo-copter")).unwrap_or_else(|| PathBuf::from(".copter"))
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "cargo-copter")]
 #[command(about = "Test the downstream impact of crate changes before publishing")]
@@ -78,6 +87,11 @@ pub struct CliArgs {
     /// Override console width for testing (default: auto-detect)
     #[arg(long, value_name = "COLUMNS")]
     pub console_width: Option<usize>,
+
+    /// Run inside a Docker container for security isolation (Linux only)
+    /// This protects your system from potentially malicious code in dependencies
+    #[arg(long)]
+    pub docker: bool,
 }
 
 impl CliArgs {
@@ -144,7 +158,6 @@ impl CliArgs {
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_validate_both_only_flags_fails() {
         let args = CliArgs {
@@ -164,6 +177,7 @@ mod tests {
             error_lines: 10,
             skip_normal_testing: false,
             console_width: None,
+            docker: false,
         };
         assert!(args.validate().is_err());
     }
@@ -190,6 +204,7 @@ mod tests {
             error_lines: 10,
             skip_normal_testing: false,
             console_width: None,
+            docker: false,
         };
         let result = args.validate();
         std::fs::remove_file("./Cargo.toml.test").ok();

@@ -64,6 +64,7 @@ mod tests {
             json: false,
             output: std::path::PathBuf::from("copter-report.html"),
             console_width: None,
+            docker: false,
         };
 
         let matrix = build_test_matrix(&args).expect("Should build matrix");
@@ -98,6 +99,7 @@ mod tests {
             json: false,
             output: std::path::PathBuf::from("copter-report.html"),
             console_width: None,
+            docker: false,
         };
 
         let matrix = build_test_matrix(&args).expect("Should build matrix");
@@ -131,6 +133,7 @@ mod tests {
             json: false,
             output: std::path::PathBuf::from("copter-report.html"),
             console_width: None,
+            docker: false,
         };
 
         let matrix = build_test_matrix(&args).expect("Should build matrix");
@@ -167,6 +170,7 @@ mod tests {
             json: false,
             output: std::path::PathBuf::from("copter-report.html"),
             console_width: None,
+            docker: false,
         };
 
         let matrix = build_test_matrix(&args).expect("Should build matrix");

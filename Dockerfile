@@ -1,16 +1,17 @@
-# Multi-stage Dockerfile for cargo-crusader
+# Multi-stage Dockerfile for cargo-copter
 #
-# This Dockerfile builds cargo-crusader in an isolated environment
+# This Dockerfile builds cargo-copter in an isolated environment
 # and creates a minimal runtime image for safe dependency testing.
 #
 # Build:
-#   docker build -t cargo-crusader:latest .
+#   docker build -t cargo-copter:latest .
 #
 # Run:
-#   docker run --rm -v "$PWD:/workspace:ro" cargo-crusader:latest --help
+#   docker run --rm -v "$(pwd):/workspace:ro" -v "$(pwd)/.copter:/copter" \
+#     cargo-copter:latest --crate rgb --top-dependents 5
 
 # Stage 1: Builder
-FROM rust:1.75-slim AS builder
+FROM rust:1.83-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && \
@@ -30,15 +31,15 @@ COPY src ./src
 
 # Build release binary
 RUN cargo build --release --locked && \
-    strip target/release/cargo-crusader
+    strip target/release/cargo-copter
 
 # Verify the binary works
-RUN ./target/release/cargo-crusader --version || echo "Built successfully"
+RUN ./target/release/cargo-copter --version || echo "Built successfully"
 
 # Stage 2: Runtime
-FROM rust:1.75-slim
+FROM rust:1.83-slim
 
-# Install runtime dependencies
+# Install runtime dependencies (needed for compiling tested crates)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       build-essential \
@@ -49,28 +50,23 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy binary from builder
-COPY --from=builder /build/target/release/cargo-crusader /usr/local/bin/cargo-crusader
+COPY --from=builder /build/target/release/cargo-copter /usr/local/bin/cargo-copter
 
-# Create non-root user for safety
-RUN useradd -m -u 1000 crusader && \
-    mkdir -p /workspace /output /cargo-cache && \
-    chown crusader:crusader /workspace /output /cargo-cache
+# Create directories with proper permissions
+# /workspace - for mounting source crates (read-only)
+# /copter - for staging, cache, and reports (read-write)
+RUN mkdir -p /workspace /copter && \
+    chmod 777 /workspace /copter
 
-# Switch to non-root user
-USER crusader
+# Set working directory to /copter so reports are written there
+WORKDIR /copter
 
-# Set working directory
-WORKDIR /workspace
-
-# Set default cargo home to cache directory
-ENV CARGO_HOME=/cargo-cache
-
-# Default entrypoint
-ENTRYPOINT ["cargo-crusader"]
+# Default entrypoint with staging dir preset
+ENTRYPOINT ["cargo-copter", "--staging-dir", "/copter/staging"]
 CMD ["--help"]
 
 # Labels
-LABEL org.opencontainers.image.title="cargo-crusader"
+LABEL org.opencontainers.image.title="cargo-copter"
 LABEL org.opencontainers.image.description="Test reverse dependencies before publishing to crates.io"
-LABEL org.opencontainers.image.source="https://github.com/brson/cargo-crusader"
+LABEL org.opencontainers.image.source="https://github.com/brson/cargo-copter"
 LABEL org.opencontainers.image.licenses="MIT OR Apache-2.0"

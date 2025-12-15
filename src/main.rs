@@ -14,6 +14,7 @@ mod cli;
 mod compile;
 mod config;
 mod console_format;
+mod docker;
 mod download;
 mod error_extract;
 mod git;

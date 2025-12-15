@@ -266,8 +266,14 @@ VersionSpec {
 
 ## Caching
 
-- `.copter/staging/{crate}-{version}/` - Unpacked sources + build artifacts
-- `.copter/crate-cache/` - Downloaded .crate files
+Default cache location (platform-specific user cache directory):
+- Linux: `~/.cache/cargo-copter/`
+- macOS: `~/Library/Caches/cargo-copter/`
+- Windows: `%LOCALAPPDATA%/cargo-copter/`
+
+Contents:
+- `staging/{crate}-{version}/` - Unpacked sources + build artifacts
+- `crate-cache/` - Downloaded .crate files
 - Provides **10x speedup** on reruns
 
 ## CLI Flags
