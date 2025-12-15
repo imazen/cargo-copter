@@ -898,10 +898,7 @@ pub fn write_failure_log(report_dir: &Path, staging_dir: &Path, result: &TestRes
         "# Failure Log: {} {} with base crate version {}\n",
         dependent_name, dependent_version, base_version
     ));
-    content.push_str(&format!(
-        "# Generated: {}\n",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-    ));
+    content.push_str(&format!("# Generated: {}\n", chrono::Local::now().format("%Y-%m-%d %H:%M:%S")));
     content.push_str(&format!(
         "# Source: {}\n\n",
         dependent_staging_path.canonicalize().unwrap_or(dependent_staging_path).display()
