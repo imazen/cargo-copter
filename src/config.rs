@@ -45,7 +45,7 @@ pub fn build_test_matrix(args: &CliArgs) -> Result<TestMatrix, String> {
         base_crate: base_crate_name,
         base_versions,
         dependents,
-        staging_dir: args.staging_dir.clone(),
+        staging_dir: args.get_staging_dir(),
         skip_check: args.should_skip_check(),
         skip_test: args.should_skip_test(),
         error_lines: args.error_lines,

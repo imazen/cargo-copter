@@ -25,7 +25,7 @@ mod tests {
                 override_mode: OverrideMode::None,
                 is_baseline: true,
             }],
-            staging_dir: PathBuf::from(".copter/staging"),
+            staging_dir: crate::cli::default_cache_dir().join("staging"),
             skip_check: false,
             skip_test: false,
             error_lines: 10,

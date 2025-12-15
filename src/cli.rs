@@ -40,8 +40,9 @@ pub struct CliArgs {
     pub output: PathBuf,
 
     /// Directory for staging unpacked crates (enables caching across runs)
-    #[arg(long, default_value = ".copter/staging")]
-    pub staging_dir: PathBuf,
+    /// Default: ~/.cache/cargo-copter/staging (Linux), ~/Library/Caches/cargo-copter/staging (macOS)
+    #[arg(long)]
+    pub staging_dir: Option<PathBuf>,
 
     /// Only fetch dependencies (skip check and test)
     #[arg(long)]
@@ -132,6 +133,11 @@ impl CliArgs {
     pub fn should_skip_test(&self) -> bool {
         self.only_fetch || self.only_check
     }
+
+    /// Get the staging directory, using the default cache location if not specified
+    pub fn get_staging_dir(&self) -> PathBuf {
+        self.staging_dir.clone().unwrap_or_else(|| default_cache_dir().join("staging"))
+    }
 }
 
 #[cfg(test)]
@@ -150,7 +156,7 @@ mod tests {
             test_versions: vec![],
             force_versions: vec![],
             output: PathBuf::from("report.html"),
-            staging_dir: PathBuf::from(".copter/staging"),
+            staging_dir: None,
             only_fetch: true,
             only_check: true,
             json: false,
@@ -176,7 +182,7 @@ mod tests {
             test_versions: vec![],
             force_versions: vec![],
             output: PathBuf::from("report.html"),
-            staging_dir: PathBuf::from(".copter/staging"),
+            staging_dir: None,
             only_fetch: false,
             only_check: false,
             json: false,

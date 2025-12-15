@@ -43,10 +43,11 @@ fn main() {
 
     // Clean staging directory if requested
     if args.clean {
-        if args.staging_dir.exists() {
-            match fs::remove_dir_all(&args.staging_dir) {
+        let staging_dir = args.get_staging_dir();
+        if staging_dir.exists() {
+            match fs::remove_dir_all(&staging_dir) {
                 Ok(_) => {
-                    println!("Cleaned staging directory: {}", args.staging_dir.display());
+                    println!("Cleaned staging directory: {}", staging_dir.display());
                 }
                 Err(e) => {
                     eprintln!("Warning: Failed to clean staging directory: {}", e);

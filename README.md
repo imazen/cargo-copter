@@ -105,7 +105,7 @@ cargo-copter --clean --top-dependents 5
     --dependent-paths <PATH>   Test local crate paths
     --test-versions <VER>...   Test multiple versions
     --force-versions <VER>...  Force versions (bypass semver)
-    --staging-dir <PATH>       Cache directory [default: .copter/staging]
+    --staging-dir <PATH>       Cache directory [default: ~/.cache/cargo-copter/staging]. Try --staging-dir ./copter/staging for easier viewing of dependent source code.
     --output <PATH>            HTML report [default: copter-report.html]
     --only-fetch               Only fetch dependencies (skip check and test)
     --only-check               Only fetch and check (skip tests)
@@ -141,12 +141,17 @@ cargo-copter --clean --top-dependents 5
 
 ## Caching
 
-Cache location: `.copter/staging/{crate}-{version}/`
+Cache location (platform-specific):
+- Linux: `~/.cache/cargo-copter/staging/{crate}-{version}/`
+- macOS: `~/Library/Caches/cargo-copter/staging/{crate}-{version}/`
+- Windows: `%LOCALAPPDATA%/cargo-copter/staging/{crate}-{version}/`
+
+Contains:
 - Unpacked sources
 - Build artifacts (target/)
 - 10x speedup on subsequent runs
 
-Downloaded .crate files: `.copter/crate-cache/`
+Downloaded .crate files: `~/.cache/cargo-copter/crate-cache/` (or platform equivalent)
 
 ## Reports
 
@@ -196,3 +201,9 @@ MIT/Apache-2.0 (standard Rust dual-license)
 - GitHub: https://github.com/imazen/cargo-copter
 - Rust API Evolution RFC: https://github.com/rust-lang/rfcs/blob/master/text/1105-api-evolution.md
 - Inspired by: [cargo-crusader](https://github.com/rust-lang/cargo-crusader)
+
+
+# AI
+
+This was made with Claude Code and around 300 prompts to keep it on track. It wasn't a net savings in time vs. writing it myself, but at least I could do it from my phone. 
+You can probably tell that it needs a lot of refactoring and improved test coverage. However, this is the kind of tool that doesn't need to be perfect, it just needs to be good enough to be useful. It's not a library.

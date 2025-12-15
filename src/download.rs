@@ -14,8 +14,14 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
+use crate::cli::default_cache_dir;
+
 const USER_AGENT: &str = "cargo-copter/0.1.1 (https://github.com/imazen/cargo-copter)";
-const CRATE_CACHE_DIR: &str = "./.copter/crate-cache";
+
+/// Get the crate cache directory
+fn crate_cache_dir() -> PathBuf {
+    default_cache_dir().join("crate-cache")
+}
 
 /// Build a crates.io API URL
 pub fn crate_url(krate: &str, call: Option<&str>) -> String {
@@ -66,7 +72,7 @@ impl CrateHandle {
 
 /// Download a crate file (with caching)
 pub fn get_crate_handle(crate_name: &str, version: &Version) -> std::io::Result<CrateHandle> {
-    let cache_path = Path::new(CRATE_CACHE_DIR);
+    let cache_path = crate_cache_dir();
     let crate_dir = cache_path.join(crate_name);
     fs::create_dir_all(&crate_dir)?;
 
