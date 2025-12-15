@@ -50,10 +50,7 @@ mod tests {
         let matrix = create_test_matrix();
 
         // First version should be baseline
-        assert!(
-            matrix.base_versions[0].is_baseline,
-            "First version should be marked as baseline"
-        );
+        assert!(matrix.base_versions[0].is_baseline, "First version should be marked as baseline");
     }
 
     #[test]
@@ -62,11 +59,7 @@ mod tests {
 
         let baseline = matrix.base_versions.iter().find(|v| v.is_baseline).unwrap();
 
-        assert_eq!(
-            baseline.override_mode,
-            OverrideMode::None,
-            "Baseline should have OverrideMode::None"
-        );
+        assert_eq!(baseline.override_mode, OverrideMode::None, "Baseline should have OverrideMode::None");
     }
 
     #[test]
@@ -75,11 +68,7 @@ mod tests {
 
         let non_baseline = matrix.base_versions.iter().find(|v| !v.is_baseline).unwrap();
 
-        assert_ne!(
-            non_baseline.override_mode,
-            OverrideMode::None,
-            "Non-baseline should have an override mode"
-        );
+        assert_ne!(non_baseline.override_mode, OverrideMode::None, "Non-baseline should have an override mode");
     }
 
     #[test]
@@ -108,15 +97,8 @@ mod tests {
             baseline: None, // Baseline has no comparison
         };
 
-        assert!(
-            baseline_result.is_baseline(),
-            "Result with baseline=None should be identified as baseline"
-        );
-        assert_eq!(
-            baseline_result.status(),
-            TestStatus::Baseline { passed: true },
-            "Should return Baseline status"
-        );
+        assert!(baseline_result.is_baseline(), "Result with baseline=None should be identified as baseline");
+        assert_eq!(baseline_result.status(), TestStatus::Baseline { passed: true }, "Should return Baseline status");
     }
 
     #[test]
@@ -142,10 +124,7 @@ mod tests {
                 original_requirement: None,
                 all_crate_versions: vec![],
             },
-            baseline: Some(BaselineComparison {
-                baseline_passed: true,
-                baseline_version: "0.1.0".to_string(),
-            }),
+            baseline: Some(BaselineComparison { baseline_passed: true, baseline_version: "0.1.0".to_string() }),
         };
 
         assert!(!result.is_baseline(), "Result with baseline comparison should not be baseline");

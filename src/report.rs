@@ -7,7 +7,6 @@
 /// - Error signature extraction for deduplication
 ///
 /// Console rendering is handled by the console_format module.
-
 use crate::console_format::{self, ComparisonStats};
 use crate::types::{CommandType, OfferedRow, VersionSource};
 use std::fs::File;
@@ -224,14 +223,14 @@ pub fn error_signature(text: &str) -> String {
 
     for line in text.lines() {
         // Match error lines like "error[E0432]: ..." and normalize
-        if let Some(start) = line.find("error[") {
-            if let Some(end) = line[start..].find("]:") {
-                let code = &line[start..start + end + 2];
-                let message = line[start + end + 2..].trim();
-                // Remove specific line references to focus on error type
-                let normalized = message.split("-->").next().unwrap_or(message).trim();
-                errors.insert(format!("{} {}", code, normalized));
-            }
+        if let Some(start) = line.find("error[")
+            && let Some(end) = line[start..].find("]:")
+        {
+            let code = &line[start..start + end + 2];
+            let message = line[start + end + 2..].trim();
+            // Remove specific line references to focus on error type
+            let normalized = message.split("-->").next().unwrap_or(message).trim();
+            errors.insert(format!("{} {}", code, normalized));
         }
     }
 
@@ -255,7 +254,6 @@ pub fn extract_error_text(row: &OfferedRow) -> Option<String> {
     }
 }
 
-
 /// Print an OfferedRow using the standard table format
 pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: Option<&str>, max_error_lines: usize) {
     // Convert OfferedRow to formatted data
@@ -266,28 +264,29 @@ pub fn print_offered_row(row: &OfferedRow, is_last_in_group: bool, prev_error: O
 
     // When errors match exactly, show "same failure" instead of repeating the error
     // Applies to both regression and broken scenarios, but NOT for baseline rows
-    if !is_baseline && let Some(prev) = prev_error {
-        if !formatted.error_details.is_empty() {
-            // Extract FULL error for comparison (not truncated)
-            // prev_error is full, so we need full current error too
-            let full_formatted = format_offered_row(row, 0);
-            let current_error = full_formatted.error_details.join("\n");
-            // Use error signature for robust comparison
-            let current_signature = error_signature(&current_error);
-            if current_signature == prev {
-                // Clear error details and update result to show "same failure"
-                // Keep ICT marks and time
-                formatted.error_details.clear();
-                // Replace the failure type with "same failure", keeping ICT marks
-                // For broken scenarios, also replace "test broken" -> "same failure"
-                formatted.result = formatted
-                    .result
-                    .replace("test failed", "same failure")
-                    .replace("build failed", "same failure")
-                    .replace("fetch failed", "same failure")
-                    .replace("test broken", "same failure")
-                    .replace("build broken", "same failure");
-            }
+    if !is_baseline
+        && let Some(prev) = prev_error
+        && !formatted.error_details.is_empty()
+    {
+        // Extract FULL error for comparison (not truncated)
+        // prev_error is full, so we need full current error too
+        let full_formatted = format_offered_row(row, 0);
+        let current_error = full_formatted.error_details.join("\n");
+        // Use error signature for robust comparison
+        let current_signature = error_signature(&current_error);
+        if current_signature == prev {
+            // Clear error details and update result to show "same failure"
+            // Keep ICT marks and time
+            formatted.error_details.clear();
+            // Replace the failure type with "same failure", keeping ICT marks
+            // For broken scenarios, also replace "test broken" -> "same failure"
+            formatted.result = formatted
+                .result
+                .replace("test failed", "same failure")
+                .replace("build failed", "same failure")
+                .replace("fetch failed", "same failure")
+                .replace("test broken", "same failure")
+                .replace("build broken", "same failure");
         }
     }
 
@@ -504,7 +503,6 @@ fn format_offered_row(row: &OfferedRow, max_error_lines: usize) -> FormattedRow 
     }
 }
 
-
 //
 // Summary and statistics
 //
@@ -602,7 +600,7 @@ pub fn generate_comparison_table(rows: &[OfferedRow]) -> Vec<ComparisonStats> {
     let mut by_version: HashMap<String, Vec<&OfferedRow>> = HashMap::new();
     for row in rows {
         if let Some(ref offered) = row.offered {
-            by_version.entry(offered.version.clone()).or_insert_with(Vec::new).push(row);
+            by_version.entry(offered.version.clone()).or_default().push(row);
         }
     }
 
@@ -863,7 +861,8 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
             let resolved_display = format!("{} {}", prefix, resolved);
             let resolved_display = console_format::truncate_from_start_with_padding(&resolved_display, w.resolved - 2);
             let dependent_display = format!("{} {}", prefix, dependent);
-            let dependent_display = console_format::truncate_from_start_with_padding(&dependent_display, w.dependent - 2);
+            let dependent_display =
+                console_format::truncate_from_start_with_padding(&dependent_display, w.dependent - 2);
 
             output.push_str(&format!(
                 "│{:width$}│ {} │ {} │ {} │{:w_result$}│\n",

@@ -22,7 +22,10 @@ mod tests {
         let result = create_test_result_with_requirement_none();
         let row = test_result_to_offered_row(&result);
 
-        assert_eq!(row.primary.spec, "?", "Spec should default to '?' when original_requirement is None (broken packages)");
+        assert_eq!(
+            row.primary.spec, "?",
+            "Spec should default to '?' when original_requirement is None (broken packages)"
+        );
     }
 
     /// Test that baseline rows have no offered version
@@ -143,10 +146,7 @@ mod tests {
                 original_requirement: Some("^0.8.0".to_string()),
                 all_crate_versions: vec![],
             },
-            baseline: Some(BaselineComparison {
-                baseline_passed: true,
-                baseline_version: "0.8.50".to_string(),
-            }),
+            baseline: Some(BaselineComparison { baseline_passed: true, baseline_version: "0.8.50".to_string() }),
         }
     }
 }

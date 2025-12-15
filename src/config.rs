@@ -5,7 +5,6 @@
 /// - Resolving version keywords ("this", "latest", etc.)
 /// - Validating and resolving all paths
 /// - Determining baseline versions
-
 use crate::api;
 use crate::cli::CliArgs;
 use crate::compile;
@@ -83,8 +82,8 @@ fn resolve_base_crate_info(args: &CliArgs) -> Result<(String, String, Option<Pat
         } else {
             // No --path, fetch latest version from crates.io
             debug!("No --path specified, fetching latest version from crates.io");
-            let latest_version = version::resolve_latest_version(crate_name, false)
-                .unwrap_or_else(|_| "0.0.0".to_string());
+            let latest_version =
+                version::resolve_latest_version(crate_name, false).unwrap_or_else(|_| "0.0.0".to_string());
             Ok((crate_name.clone(), latest_version, None))
         }
     } else {
@@ -143,7 +142,8 @@ fn resolve_base_versions(
 
         // Auto-insert non-forced variants for each forced version (unless --skip-normal-testing)
         if !args.skip_normal_testing {
-            let forced_versions: Vec<VersionSpec> = versions.iter().filter(|v| v.override_mode == OverrideMode::Force).cloned().collect();
+            let forced_versions: Vec<VersionSpec> =
+                versions.iter().filter(|v| v.override_mode == OverrideMode::Force).cloned().collect();
 
             for forced_ver in forced_versions {
                 // Check if a non-forced variant already exists
@@ -192,9 +192,8 @@ fn resolve_base_versions(
             // No local version (only --crate), add "latest" as final version if not already present
             match version::resolve_latest_version(crate_name, false) {
                 Ok(ver) => {
-                    let already_present = versions
-                        .iter()
-                        .any(|v| matches!(&v.crate_ref.version, Version::Semver(s) if s == &ver));
+                    let already_present =
+                        versions.iter().any(|v| matches!(&v.crate_ref.version, Version::Semver(s) if s == &ver));
 
                     if !already_present {
                         debug!("No local version, adding latest: {}", ver);
@@ -243,10 +242,10 @@ fn resolve_base_versions(
     // Ensure exactly one baseline is marked
     // (In default mode, baseline is already set. In multi-version mode, mark first)
     let baseline_count = versions.iter().filter(|v| v.is_baseline).count();
-    if baseline_count == 0 {
-        if let Some(first) = versions.first_mut() {
-            first.is_baseline = true;
-        }
+    if baseline_count == 0
+        && let Some(first) = versions.first_mut()
+    {
+        first.is_baseline = true;
     }
 
     Ok(versions)

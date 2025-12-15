@@ -5,7 +5,6 @@
 /// - Downloading .crate files
 /// - Extracting crate archives
 /// - Caching downloaded crates
-
 use flate2::read::GzDecoder;
 use log::debug;
 use semver::Version;
@@ -46,6 +45,7 @@ pub fn crate_url_with_parms(krate: &str, call: Option<&str>, parms: &[(&str, &st
 }
 
 /// Download data from a URL using HTTP GET
+#[allow(clippy::result_large_err)]
 pub fn http_get_bytes(url: &str) -> Result<Vec<u8>, ureq::Error> {
     let resp = ureq::get(url).set("User-Agent", USER_AGENT).call()?;
     let len = resp.header("Content-Length").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
@@ -81,8 +81,7 @@ pub fn get_crate_handle(crate_name: &str, version: &Version) -> std::io::Result<
     // Check if file exists
     if !crate_file.exists() {
         let url = crate_url(crate_name, Some(&format!("{}/download", version)));
-        let body = http_get_bytes(&url)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        let body = http_get_bytes(&url).map_err(|e| std::io::Error::other(e.to_string()))?;
 
         // Write atomically: write to temp file, then rename
         let temp_file = crate_dir.join(format!("{}-{}.crate.tmp", crate_name, version));
@@ -99,16 +98,12 @@ pub fn get_crate_handle(crate_name: &str, version: &Version) -> std::io::Result<
 
 /// Download and unpack a specific version of a crate for patching
 /// Returns the path to the unpacked source
-pub fn download_and_unpack_crate(
-    crate_name: &str,
-    version: &str,
-    staging_dir: &Path,
-) -> std::io::Result<PathBuf> {
+pub fn download_and_unpack_crate(crate_name: &str, version: &str, staging_dir: &Path) -> std::io::Result<PathBuf> {
     debug!("Downloading and unpacking {} version {}", crate_name, version);
 
     // Parse version
-    let vers = Version::parse(version)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))?;
+    let vers =
+        Version::parse(version).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))?;
 
     // Download the crate
     let crate_handle = get_crate_handle(crate_name, &vers)?;

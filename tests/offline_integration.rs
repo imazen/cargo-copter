@@ -185,7 +185,6 @@ fn test_staging_directory_structure() {
 #[test]
 fn test_staging_directory_caching_check() {
     use std::fs;
-    use std::time::{Duration, SystemTime};
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();

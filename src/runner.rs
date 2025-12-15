@@ -46,7 +46,10 @@ where
 
         // Test baseline first, then other versions
         let baseline_result = {
-            let baseline_spec = matrix.base_versions.iter().find(|v| v.is_baseline)
+            let baseline_spec = matrix
+                .base_versions
+                .iter()
+                .find(|v| v.is_baseline)
                 .ok_or_else(|| "No baseline version found".to_string())?;
 
             debug!("Testing BASELINE {} against {}", baseline_spec.crate_ref.display(), dependent.display());
@@ -75,7 +78,8 @@ where
             debug!("Testing {} against {}", base_version.display(), dependent.display());
 
             // Run the three-step test, passing the baseline spec requirement
-            let execution = run_single_test_with_spec(base_spec, dependent_spec, &matrix, baseline_spec_requirement.clone())?;
+            let execution =
+                run_single_test_with_spec(base_spec, dependent_spec, &matrix, baseline_spec_requirement.clone())?;
 
             let result = TestResult {
                 base_version: base_version.clone(),
@@ -83,7 +87,9 @@ where
                 execution,
                 baseline: Some(BaselineComparison {
                     baseline_passed,
-                    baseline_version: matrix.base_versions.iter()
+                    baseline_version: matrix
+                        .base_versions
+                        .iter()
                         .find(|v| v.is_baseline)
                         .map(|v| v.crate_ref.version.display())
                         .unwrap_or_else(|| "unknown".to_string()),
@@ -132,16 +138,15 @@ fn run_single_test_with_spec(
         CrateSource::Local { path } => path.clone(),
         CrateSource::Registry => {
             // Download and unpack
-            let vers = SemverVersion::parse(&dependent_version_str)
-                .map_err(|e| format!("Invalid semver: {}", e))?;
+            let vers = SemverVersion::parse(&dependent_version_str).map_err(|e| format!("Invalid semver: {}", e))?;
             let crate_handle = download::get_crate_handle(&dependent.name, &vers)
                 .map_err(|e| format!("Failed to download {}: {}", dependent.name, e))?;
 
             let dest = matrix.staging_dir.join(format!("{}-{}", dependent.name, dependent_version_str));
             if !dest.exists() {
-                std::fs::create_dir_all(&dest)
-                    .map_err(|e| format!("Failed to create staging dir: {}", e))?;
-                crate_handle.unpack_source_to(&dest)
+                std::fs::create_dir_all(&dest).map_err(|e| format!("Failed to create staging dir: {}", e))?;
+                crate_handle
+                    .unpack_source_to(&dest)
                     .map_err(|e| format!("Failed to unpack {}: {}", dependent.name, e))?;
             }
 
@@ -166,25 +171,22 @@ fn run_single_test_with_spec(
         match &base_version.source {
             CrateSource::Local { path } => {
                 // If path points to Cargo.toml, extract directory
-                let dir_path = if path.ends_with("Cargo.toml") {
-                    path.parent().unwrap().to_path_buf()
-                } else {
-                    path.clone()
-                };
+                let dir_path =
+                    if path.ends_with("Cargo.toml") { path.parent().unwrap().to_path_buf() } else { path.clone() };
                 Some(dir_path)
             }
             CrateSource::Registry => {
                 // Download the registry version to use as override path
-                let base_vers = SemverVersion::parse(&base_version_str)
-                    .map_err(|e| format!("Invalid semver for base: {}", e))?;
+                let base_vers =
+                    SemverVersion::parse(&base_version_str).map_err(|e| format!("Invalid semver for base: {}", e))?;
                 let crate_handle = download::get_crate_handle(&base_version.name, &base_vers)
                     .map_err(|e| format!("Failed to download {}: {}", base_version.name, e))?;
 
                 let dest = matrix.staging_dir.join(format!("{}-{}", base_version.name, base_version_str));
                 if !dest.exists() {
-                    std::fs::create_dir_all(&dest)
-                        .map_err(|e| format!("Failed to create staging dir: {}", e))?;
-                    crate_handle.unpack_source_to(&dest)
+                    std::fs::create_dir_all(&dest).map_err(|e| format!("Failed to create staging dir: {}", e))?;
+                    crate_handle
+                        .unpack_source_to(&dest)
                         .map_err(|e| format!("Failed to unpack {}: {}", base_version.name, e))?;
                 }
 
@@ -207,8 +209,7 @@ fn run_single_test_with_spec(
     };
 
     // Execute the test
-    let result = compile::run_three_step_ict(test_config)
-        .map_err(|e| format!("Test execution failed: {}", e))?;
+    let result = compile::run_three_step_ict(test_config).map_err(|e| format!("Test execution failed: {}", e))?;
 
     Ok(result)
 }

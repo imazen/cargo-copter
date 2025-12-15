@@ -8,6 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// Allow dead code and unused imports during development
+// TODO: Remove these when the codebase stabilizes
+#![allow(dead_code)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+
 mod api;
 mod bridge;
 mod cli;
@@ -35,6 +41,20 @@ fn main() {
 
     // Parse CLI arguments
     let args = cli::CliArgs::parse_args();
+
+    // Handle --docker flag: re-execute inside Docker container
+    if args.docker {
+        let original_args: Vec<String> = std::env::args().skip(1).collect();
+        match docker::run_in_docker(&original_args) {
+            Ok(status) => {
+                std::process::exit(status.code().unwrap_or(1));
+            }
+            Err(e) => {
+                ui::print_error(&e);
+                std::process::exit(1);
+            }
+        }
+    }
 
     // Validate arguments
     if let Err(e) = args.validate() {
@@ -72,8 +92,7 @@ fn main() {
     };
 
     // Initialize table widths for console output
-    let version_strs: Vec<String> =
-        matrix.base_versions.iter().map(|v| v.crate_ref.version.display()).collect();
+    let version_strs: Vec<String> = matrix.base_versions.iter().map(|v| v.crate_ref.version.display()).collect();
     let display_version = version_strs.first().map(|s| s.as_str()).unwrap_or("unknown");
     let force_versions = matrix.base_versions.iter().any(|v| v.override_mode == OverrideMode::Force);
     report::init_table_widths(&version_strs, display_version, force_versions);
@@ -102,10 +121,10 @@ fn main() {
         let row = bridge::test_result_to_offered_row(result);
 
         // Print separator between different dependents
-        if let Some(ref prev) = prev_dependent {
-            if *prev != row.primary.dependent_name {
-                report::print_separator_line();
-            }
+        if let Some(ref prev) = prev_dependent
+            && *prev != row.primary.dependent_name
+        {
+            report::print_separator_line();
         }
 
         // Determine if this is the last row for this dependent
@@ -155,11 +174,7 @@ fn print_test_plan(matrix: &TestMatrix, args: &cli::CliArgs) {
         .take(5)
         .map(|d| {
             let version = d.crate_ref.version.display();
-            if version == "latest" {
-                d.crate_ref.name.clone()
-            } else {
-                format!("{}:{}", d.crate_ref.name, version)
-            }
+            if version == "latest" { d.crate_ref.name.clone() } else { format!("{}:{}", d.crate_ref.name, version) }
         })
         .collect();
 
@@ -187,13 +202,10 @@ fn print_test_plan(matrix: &TestMatrix, args: &cli::CliArgs) {
     );
 
     // Determine source path for display
-    let this_path = matrix
-        .base_versions
-        .iter()
-        .find_map(|v| match &v.crate_ref.source {
-            CrateSource::Local { path } => Some(path.display().to_string()),
-            _ => None,
-        });
+    let this_path = matrix.base_versions.iter().find_map(|v| match &v.crate_ref.source {
+        CrateSource::Local { path } => Some(path.display().to_string()),
+        _ => None,
+    });
 
     // Just print the test plan summary (table header printed separately during streaming)
     println!("Testing {} reverse dependencies of {}", matrix.dependents.len(), matrix.base_crate);
@@ -213,13 +225,10 @@ fn generate_non_console_reports(rows: &[OfferedRow], args: &cli::CliArgs, matrix
     // Export markdown report
     let markdown_path = PathBuf::from("copter-report.md");
     let test_plan = format_test_plan_string(matrix);
-    let this_path = matrix
-        .base_versions
-        .iter()
-        .find_map(|v| match &v.crate_ref.source {
-            CrateSource::Local { path } => Some(path.display().to_string()),
-            _ => None,
-        });
+    let this_path = matrix.base_versions.iter().find_map(|v| match &v.crate_ref.source {
+        CrateSource::Local { path } => Some(path.display().to_string()),
+        _ => None,
+    });
 
     match report::export_markdown_table_report(
         rows,
@@ -264,11 +273,7 @@ fn format_test_plan_string(matrix: &TestMatrix) -> String {
         .take(5)
         .map(|d| {
             let version = d.crate_ref.version.display();
-            if version == "latest" {
-                d.crate_ref.name.clone()
-            } else {
-                format!("{}:{}", d.crate_ref.name, version)
-            }
+            if version == "latest" { d.crate_ref.name.clone() } else { format!("{}:{}", d.crate_ref.name, version) }
         })
         .collect();
 
@@ -288,12 +293,7 @@ fn format_test_plan_string(matrix: &TestMatrix) -> String {
         }
     }
 
-    format!(
-        "  Dependents: {}{}\n  Versions:   {}",
-        deps_display.join(", "),
-        more_deps,
-        versions_display.join(", ")
-    )
+    format!("  Dependents: {}{}\n  Versions:   {}", deps_display.join(", "), more_deps, versions_display.join(", "))
 }
 
 /// Suggest a command to re-test only the failed dependents
@@ -305,7 +305,7 @@ fn suggest_failed_retest(rows: &[OfferedRow], args: &cli::CliArgs, matrix: &Test
         // Check if this dependent had any failures (regression or baseline failed)
         let failed = match row.baseline_passed {
             Some(true) => !row.test.all_passed(), // Regression: baseline passed, offered failed
-            Some(false) => true,                   // Baseline already broken
+            Some(false) => true,                  // Baseline already broken
             None => !row.test.all_passed(),       // This IS the baseline and it failed
         };
 

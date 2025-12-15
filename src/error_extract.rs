@@ -107,10 +107,10 @@ pub fn parse_cargo_json(output: &str) -> Vec<Diagnostic> {
 
         match serde_json::from_str::<CargoMessage>(line) {
             Ok(msg) if msg.reason == "compiler-message" => {
-                if let Some(compiler_msg) = msg.message {
-                    if let Some(diag) = convert_compiler_message(&compiler_msg) {
-                        diagnostics.push(diag);
-                    }
+                if let Some(compiler_msg) = msg.message
+                    && let Some(diag) = convert_compiler_message(&compiler_msg)
+                {
+                    diagnostics.push(diag);
                 }
             }
             _ => continue, // Skip non-compiler messages or parse errors

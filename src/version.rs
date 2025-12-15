@@ -5,7 +5,6 @@
 /// - Checking semver compatibility
 /// - Resolving latest versions from crates.io
 /// - Determining if WIP versions satisfy dependent requirements
-
 use crate::api;
 use crate::compile;
 use crate::manifest;
@@ -68,8 +67,7 @@ pub fn resolve_version_keyword(
             }
 
             // Validate it's a valid semver version
-            Version::parse(version_str)
-                .map_err(|e| format!("Invalid version '{}': {}", version_str, e))?;
+            Version::parse(version_str).map_err(|e| format!("Invalid version '{}': {}", version_str, e))?;
 
             // Literal version string (supports hyphens like "0.8.2-alpha2")
             Ok(Some(compile::VersionSource::Published { version: version_str.to_string(), forced: false }))
@@ -81,8 +79,7 @@ pub fn resolve_version_keyword(
 pub fn resolve_latest_version(crate_name: &str, include_prerelease: bool) -> Result<String, String> {
     debug!("Resolving latest version for {} (prerelease={})", crate_name, include_prerelease);
 
-    let krate = api::get_client().get_crate(crate_name)
-        .map_err(|e| format!("Failed to fetch crate info: {}", e))?;
+    let krate = api::get_client().get_crate(crate_name).map_err(|e| format!("Failed to fetch crate info: {}", e))?;
 
     // Filter and sort versions
     let mut versions: Vec<Version> = krate

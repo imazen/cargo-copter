@@ -37,11 +37,7 @@ pub fn parse_metadata(metadata_json: &str) -> Result<ParsedMetadata, String> {
 /// Get the version spec for a specific crate dependency
 /// Returns "?" if the spec cannot be determined
 /// Returns an error if the package is not found in metadata
-pub fn get_version_spec(
-    parsed: &ParsedMetadata,
-    node_id: &str,
-    crate_name: &str,
-) -> Result<String, String> {
+pub fn get_version_spec(parsed: &ParsedMetadata, node_id: &str, crate_name: &str) -> Result<String, String> {
     let package = parsed
         .packages
         .get(node_id)
@@ -50,14 +46,10 @@ pub fn get_version_spec(
     if let Some(dependencies) = package.get("dependencies").and_then(|d| d.as_array()) {
         // Find dependency by matching simple crate name
         for dep in dependencies {
-            if let Some(dep_name) = dep.get("name").and_then(|n| n.as_str()) {
-                if dep_name == crate_name {
-                    return Ok(dep
-                        .get("req")
-                        .and_then(|r| r.as_str())
-                        .unwrap_or("?")
-                        .to_string());
-                }
+            if let Some(dep_name) = dep.get("name").and_then(|n| n.as_str())
+                && dep_name == crate_name
+            {
+                return Ok(dep.get("req").and_then(|r| r.as_str()).unwrap_or("?").to_string());
             }
         }
     }
@@ -71,34 +63,34 @@ pub fn get_version_spec(
 pub fn find_all_versions(parsed: &ParsedMetadata, crate_name: &str) -> Vec<VersionInfo> {
     let mut versions = Vec::new();
 
-    if let Some(resolve) = &parsed.resolve {
-        if let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array()) {
-            for node in nodes {
-                let node_id = node.get("id").and_then(|i| i.as_str()).unwrap_or("");
+    if let Some(resolve) = &parsed.resolve
+        && let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array())
+    {
+        for node in nodes {
+            let node_id = node.get("id").and_then(|i| i.as_str()).unwrap_or("");
 
-                if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
-                    for dep in deps {
-                        let pkg = dep.get("pkg").and_then(|p| p.as_str()).unwrap_or("");
+            if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
+                for dep in deps {
+                    let pkg = dep.get("pkg").and_then(|p| p.as_str()).unwrap_or("");
 
-                        // Extract crate name and version from package ID
-                        // Format: "source#name@version" (e.g., "registry+https://...#rgb@0.8.52")
-                        if let Some(hash_pos) = pkg.find('#') {
-                            let after_hash = &pkg[hash_pos + 1..];
-                            if let Some(at_pos) = after_hash.find('@') {
-                                let dep_crate_name = &after_hash[..at_pos];
-                                let version = &after_hash[at_pos + 1..];
+                    // Extract crate name and version from package ID
+                    // Format: "source#name@version" (e.g., "registry+https://...#rgb@0.8.52")
+                    if let Some(hash_pos) = pkg.find('#') {
+                        let after_hash = &pkg[hash_pos + 1..];
+                        if let Some(at_pos) = after_hash.find('@') {
+                            let dep_crate_name = &after_hash[..at_pos];
+                            let version = &after_hash[at_pos + 1..];
 
-                                if dep_crate_name == crate_name {
-                                    // Get the version spec from the dependent package
-                                    let spec = get_version_spec(parsed, node_id, crate_name)
-                                        .unwrap_or_else(|_| "?".to_string());
+                            if dep_crate_name == crate_name {
+                                // Get the version spec from the dependent package
+                                let spec =
+                                    get_version_spec(parsed, node_id, crate_name).unwrap_or_else(|_| "?".to_string());
 
-                                    versions.push(VersionInfo {
-                                        version: version.to_string(),
-                                        spec,
-                                        node_id: node_id.to_string(),
-                                    });
-                                }
+                                versions.push(VersionInfo {
+                                    version: version.to_string(),
+                                    spec,
+                                    node_id: node_id.to_string(),
+                                });
                             }
                         }
                     }

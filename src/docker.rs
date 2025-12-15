@@ -24,12 +24,12 @@ fn find_local_script() -> Option<PathBuf> {
     }
 
     // Check next to the executable
-    if let Ok(exe) = env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let beside_exe = dir.join("copter-docker.sh");
-            if beside_exe.exists() {
-                return Some(beside_exe);
-            }
+    if let Ok(exe) = env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let beside_exe = dir.join("copter-docker.sh");
+        if beside_exe.exists() {
+            return Some(beside_exe);
         }
     }
 

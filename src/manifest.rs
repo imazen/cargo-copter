@@ -4,7 +4,6 @@
 /// - Reading and parsing Cargo.toml files
 /// - Extracting crate name and version
 /// - Finding dependency requirements
-
 use semver::Version;
 use std::fs::File;
 use std::io::Read;
@@ -13,8 +12,7 @@ use std::path::Path;
 /// Extract crate name and version from a Cargo.toml manifest
 pub fn get_crate_info(manifest_path: &Path) -> Result<(String, String), String> {
     let toml_str = load_string(manifest_path)?;
-    let value: toml::Value = toml::from_str(&toml_str)
-        .map_err(|e| format!("Failed to parse TOML: {}", e))?;
+    let value: toml::Value = toml::from_str(&toml_str).map_err(|e| format!("Failed to parse TOML: {}", e))?;
 
     match value.get("package") {
         Some(toml::Value::Table(t)) => {
@@ -36,11 +34,9 @@ pub fn get_crate_info(manifest_path: &Path) -> Result<(String, String), String> 
 
 /// Load a file's contents as a string
 pub fn load_string(path: &Path) -> Result<String, String> {
-    let mut file = File::open(path)
-        .map_err(|e| format!("Failed to open file: {}", e))?;
+    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
     let mut s = String::new();
-    file.read_to_string(&mut s)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    file.read_to_string(&mut s).map_err(|e| format!("Failed to read file: {}", e))?;
     Ok(s)
 }
 

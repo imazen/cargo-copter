@@ -2,7 +2,6 @@
 ///
 /// This allows us to use the new architecture while keeping existing report generation
 /// working during the migration period.
-
 use crate::types::*;
 
 /// Convert TestResult to OfferedRow for existing report generation
@@ -28,7 +27,9 @@ pub fn test_result_to_offered_row(result: &TestResult) -> OfferedRow {
             CrateSource::Local { .. } => VersionSource::Local,
             CrateSource::Git { .. } => VersionSource::Git,
         },
-        used_offered_version: result.execution.actual_version
+        used_offered_version: result
+            .execution
+            .actual_version
             .as_ref()
             .map(|actual| actual == &base_version_str)
             .unwrap_or(false),
@@ -38,19 +39,14 @@ pub fn test_result_to_offered_row(result: &TestResult) -> OfferedRow {
     let offered = if is_baseline {
         None
     } else {
-        Some(OfferedVersion {
-            version: base_version_str.clone(),
-            forced: result.execution.forced_version,
-        })
+        Some(OfferedVersion { version: base_version_str.clone(), forced: result.execution.forced_version })
     };
 
     // Get baseline_passed (None for baseline itself)
     let baseline_passed = result.baseline.as_ref().map(|b| b.baseline_passed);
 
     // Convert ThreeStepResult to TestExecution
-    let test = TestExecution {
-        commands: three_step_to_commands(&result.execution),
-    };
+    let test = TestExecution { commands: three_step_to_commands(&result.execution) };
 
     // Convert transitive dependencies
     let transitive = result

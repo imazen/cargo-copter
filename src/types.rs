@@ -1,7 +1,10 @@
-/// Core data structures for test results
-///
-/// This module defines the primary data structures used throughout cargo-copter
-/// for representing test results, dependencies, and execution metadata.
+// Allow dead code for methods that may be used in the future
+#![allow(dead_code)]
+
+//! Core data structures for test results
+//!
+//! This module defines the primary data structures used throughout cargo-copter
+//! for representing test results, dependencies, and execution metadata.
 
 /// A single row in the five-column console table output
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -242,29 +245,17 @@ pub struct VersionedCrate {
 impl VersionedCrate {
     /// Create a new versioned crate from crates.io with semver
     pub fn from_registry(name: impl Into<String>, version: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            version: Version::Semver(version.into()),
-            source: CrateSource::Registry,
-        }
+        Self { name: name.into(), version: Version::Semver(version.into()), source: CrateSource::Registry }
     }
 
     /// Create a new versioned crate from local path
     pub fn from_local(name: impl Into<String>, version: impl Into<String>, path: std::path::PathBuf) -> Self {
-        Self {
-            name: name.into(),
-            version: Version::Semver(version.into()),
-            source: CrateSource::Local { path },
-        }
+        Self { name: name.into(), version: Version::Semver(version.into()), source: CrateSource::Local { path } }
     }
 
     /// Create a new versioned crate with latest version from registry
     pub fn latest_from_registry(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            version: Version::Latest,
-            source: CrateSource::Registry,
-        }
+        Self { name: name.into(), version: Version::Latest, source: CrateSource::Registry }
     }
 
     /// Get display string for this crate
@@ -298,29 +289,17 @@ pub struct VersionSpec {
 impl VersionSpec {
     /// Create a new baseline version spec
     pub fn baseline(crate_ref: VersionedCrate) -> Self {
-        Self {
-            crate_ref,
-            override_mode: OverrideMode::None,
-            is_baseline: true,
-        }
+        Self { crate_ref, override_mode: OverrideMode::None, is_baseline: true }
     }
 
     /// Create a new version spec with patch mode
     pub fn with_patch(crate_ref: VersionedCrate) -> Self {
-        Self {
-            crate_ref,
-            override_mode: OverrideMode::Patch,
-            is_baseline: false,
-        }
+        Self { crate_ref, override_mode: OverrideMode::Patch, is_baseline: false }
     }
 
     /// Create a new version spec with force mode
     pub fn with_force(crate_ref: VersionedCrate) -> Self {
-        Self {
-            crate_ref,
-            override_mode: OverrideMode::Force,
-            is_baseline: false,
-        }
+        Self { crate_ref, override_mode: OverrideMode::Force, is_baseline: false }
     }
 }
 
@@ -434,15 +413,9 @@ pub fn compile_result_to_command(
     max_error_lines: usize,
 ) -> TestCommand {
     let failures = if !compile_result.success {
-        let error_msg = extract_error_with_fallback(
-            &compile_result.diagnostics,
-            &compile_result.stderr,
-            max_error_lines,
-        );
-        vec![CrateFailure {
-            crate_name: crate_name.to_string(),
-            error_message: error_msg,
-        }]
+        let error_msg =
+            extract_error_with_fallback(&compile_result.diagnostics, &compile_result.stderr, max_error_lines);
+        vec![CrateFailure { crate_name: crate_name.to_string(), error_message: error_msg }]
     } else {
         vec![]
     };

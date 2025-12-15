@@ -4,7 +4,6 @@
 /// - Thread-safe console output
 /// - Colored terminal text
 /// - Status message formatting
-
 use lazy_static::lazy_static;
 use std::io::Write;
 use std::sync::Mutex;
@@ -13,7 +12,7 @@ use std::sync::Mutex;
 /// Prevents interleaved output from multiple threads
 fn status_lock<F>(f: F)
 where
-    F: FnOnce() -> (),
+    F: FnOnce(),
 {
     lazy_static! {
         static ref LOCK: Mutex<()> = Mutex::new(());
@@ -59,8 +58,8 @@ pub fn status(s: &str) {
 
 /// Print an error message with colored "error" prefix
 pub fn print_error(msg: &str) {
-    println!("");
+    println!();
     print_color("error", term::color::BRIGHT_RED);
     println!(": {}", msg);
-    println!("");
+    println!();
 }

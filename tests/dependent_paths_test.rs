@@ -2,9 +2,7 @@
 ///
 /// This tests the ability to specify local dependent crates via --dependent-paths
 /// instead of fetching from crates.io.
-
 use std::path::PathBuf;
-use std::process::Command;
 
 #[test]
 #[ignore] // Manual test - requires fixtures

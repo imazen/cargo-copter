@@ -15,7 +15,6 @@
 /// - String buffers (for markdown/HTML)
 /// - Files
 /// - Any combination via `TableWriter`
-
 use std::io::{self, Write};
 use std::sync::OnceLock;
 use term::color::Color;
@@ -84,7 +83,11 @@ impl<W: Write> TableWriter<W> {
         writeln!(
             self.writer,
             "├{:─<width1$}┼{:─<width2$}┼{:─<width3$}┼{:─<width4$}┼{:─<width5$}┤",
-            "", "", "", "", "",
+            "",
+            "",
+            "",
+            "",
+            "",
             width1 = w.offered,
             width2 = w.spec,
             width3 = w.resolved,
@@ -102,7 +105,8 @@ impl<W: Write> TableWriter<W> {
             .map(|(cell, width)| truncate_with_padding(cell, width - 2))
             .collect();
 
-        let row = format!("│ {} │ {} │ {} │ {} │ {} │", displays[0], displays[1], displays[2], displays[3], displays[4]);
+        let row =
+            format!("│ {} │ {} │ {} │ {} │ {} │", displays[0], displays[1], displays[2], displays[3], displays[4]);
         self.write_colored(&row, color)?;
         self.writeln()
     }
@@ -145,7 +149,9 @@ impl<W: Write> TableWriter<W> {
         writeln!(
             self.writer,
             "│{:width1$}│ ╭{:─<error_width$}╮ │{:width5$}│",
-            "", "", "",
+            "",
+            "",
+            "",
             width1 = w.offered,
             error_width = error_box_width - 4,
             width5 = w.result
@@ -158,13 +164,7 @@ impl<W: Write> TableWriter<W> {
         let error_box_width = w.spec + w.resolved + w.dependent + 6 - 2;
         let padded = truncate_with_padding(line, error_box_width - 6);
 
-        writeln!(
-            self.writer,
-            "│{:width1$}│ │ {} │ │{:width5$}│",
-            "", padded, "",
-            width1 = w.offered,
-            width5 = w.result
-        )
+        writeln!(self.writer, "│{:width1$}│ │ {} │ │{:width5$}│", "", padded, "", width1 = w.offered, width5 = w.result)
     }
 
     /// Write error box bottom
@@ -175,7 +175,9 @@ impl<W: Write> TableWriter<W> {
         writeln!(
             self.writer,
             "│{:width1$}│ ╰{:─<error_width$}╯ │{:width5$}│",
-            "", "", "",
+            "",
+            "",
+            "",
             width1 = w.offered,
             error_width = error_box_width - 4,
             width5 = w.result
@@ -254,8 +256,8 @@ impl<W: Write> TableWriter<W> {
                 write!(self.writer, "{:>16}", val)?;
             } else {
                 let prev = get_val(&stats_list[i - 1]);
-                let fixed = if val > prev { val - prev } else { 0 };
-                let regressed = if val < prev { prev - val } else { 0 };
+                let fixed = val.saturating_sub(prev);
+                let regressed = prev.saturating_sub(val);
                 let delta_str = match (fixed, regressed) {
                     (0, 0) => format!("{}", val),
                     (f, 0) => format!("+{} → {}", f, val),
@@ -338,17 +340,13 @@ impl TableWidths {
 /// Get terminal width or default to DEFAULT_TERMINAL_WIDTH
 fn get_terminal_width() -> usize {
     // Check if width override is set
-    if let Ok(guard) = OVERRIDE_WIDTH.read() {
-        if let Some(width) = *guard {
-            return width;
-        }
+    if let Ok(guard) = OVERRIDE_WIDTH.read()
+        && let Some(width) = *guard
+    {
+        return width;
     }
 
-    if let Some((Width(w), _)) = terminal_size() {
-        w as usize
-    } else {
-        DEFAULT_TERMINAL_WIDTH
-    }
+    if let Some((Width(w), _)) = terminal_size() { w as usize } else { DEFAULT_TERMINAL_WIDTH }
 }
 
 // Table widths - initialized once with actual version data (production), or resettable (tests)
@@ -369,6 +367,7 @@ pub fn set_console_width(width: usize) {
 
 /// Clear console width override (for testing)
 #[cfg(test)]
+#[allow(dead_code)]
 pub fn clear_console_width() {
     if let Ok(mut w) = OVERRIDE_WIDTH.write() {
         *w = None;
@@ -396,10 +395,10 @@ pub fn init_table_widths(versions: &[String], display_version: &str, force_versi
 /// Get table widths (with fallback to defaults if not initialized)
 pub fn get_widths() -> TableWidths {
     // Check override first (for tests or when width is dynamically set)
-    if let Ok(guard) = OVERRIDE_WIDTHS.read() {
-        if let Some(widths) = *guard {
-            return widths;
-        }
+    if let Ok(guard) = OVERRIDE_WIDTHS.read()
+        && let Some(widths) = *guard
+    {
+        return widths;
     }
 
     // Fall back to static widths
@@ -488,11 +487,7 @@ pub fn truncate_from_start_with_padding(s: &str, width: usize) -> String {
         // Reverse back to correct order
         result_chars.reverse();
 
-        let mut result = if width >= 3 {
-            String::from("...")
-        } else {
-            String::new()
-        };
+        let mut result = if width >= 3 { String::from("...") } else { String::new() };
 
         result.extend(result_chars);
         current_width += if width >= 3 { 3 } else { 0 };

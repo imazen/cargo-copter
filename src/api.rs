@@ -44,7 +44,7 @@ pub fn get_reverse_dependencies(crate_name: &str, limit: Option<usize>) -> Resul
 
     // Determine how many pages we need
     let max_pages = match limit {
-        Some(lim) => (lim + CRATES_IO_PAGE_SIZE - 1) / CRATES_IO_PAGE_SIZE, // Round up
+        Some(lim) => lim.div_ceil(CRATES_IO_PAGE_SIZE),
         None => MAX_API_PAGES,
     };
 
@@ -72,10 +72,10 @@ pub fn get_reverse_dependencies(crate_name: &str, limit: Option<usize>) -> Resul
         }
 
         // If we have enough, stop
-        if let Some(lim) = limit {
-            if all_deps.len() >= lim {
-                break;
-            }
+        if let Some(lim) = limit
+            && all_deps.len() >= lim
+        {
+            break;
         }
     }
 

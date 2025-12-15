@@ -1,32 +1,5 @@
-/// Integration test for console table alignment
-/// This test verifies that all rows in the five-column table have consistent alignment
-use std::io::{self, Write};
-use std::sync::{Arc, Mutex};
-
-// Mock stdout capture
-struct CaptureWriter {
-    captured: Arc<Mutex<Vec<String>>>,
-}
-
-impl CaptureWriter {
-    fn new() -> (Self, Arc<Mutex<Vec<String>>>) {
-        let captured = Arc::new(Mutex::new(Vec::new()));
-        (CaptureWriter { captured: captured.clone() }, captured)
-    }
-}
-
-impl Write for CaptureWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if let Ok(s) = std::str::from_utf8(buf) {
-            self.captured.lock().unwrap().push(s.to_string());
-        }
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
+// Integration test for console table alignment
+// This test verifies that all rows in the five-column table have consistent alignment
 
 /// Count the actual display width of a string as rendered in a terminal
 /// This is a more accurate measurement than character count
@@ -52,7 +25,7 @@ fn measure_display_width(s: &str) -> usize {
                 // Everything else
                 _ => {
                     let code = c as u32;
-                    if (code >= 0x1F300 && code <= 0x1F9FF) || (code >= 0x2600 && code <= 0x26FF) { 2 } else { 1 }
+                    if (0x1F300..=0x1F9FF).contains(&code) || (0x2600..=0x26FF).contains(&code) { 2 } else { 1 }
                 }
             }
         })

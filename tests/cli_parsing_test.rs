@@ -2,7 +2,6 @@
 ///
 /// These tests verify that command-line arguments are parsed correctly
 /// and invalid combinations are rejected.
-use std::path::PathBuf;
 
 // Mock the CliArgs struct for testing
 // In a real scenario, we'd import from the main crate
@@ -13,7 +12,6 @@ use std::path::PathBuf;
 fn test_cli_parsing_smoke_test() {
     // This is a placeholder test to verify the test infrastructure works
     // Once we expose CliArgs parsing in a testable way, we'll add real tests
-    assert!(true);
 }
 
 #[test]

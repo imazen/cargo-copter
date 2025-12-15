@@ -25,6 +25,7 @@ mod tests {
             json: false,
             output: std::path::PathBuf::from("copter-report.html"),
             console_width: None,
+            docker: false,
         };
 
         let matrix = build_test_matrix(&args).expect("Should build matrix");
@@ -34,10 +35,7 @@ mod tests {
         assert_eq!(baseline_count, 1, "Should have exactly one baseline version");
 
         // Verify first version is baseline
-        assert!(
-            matrix.base_versions[0].is_baseline,
-            "First version should be marked as baseline"
-        );
+        assert!(matrix.base_versions[0].is_baseline, "First version should be marked as baseline");
 
         // Verify other versions are not baseline
         for version in matrix.base_versions.iter().skip(1) {
@@ -73,11 +71,7 @@ mod tests {
         let baseline = matrix.base_versions.iter().find(|v| v.is_baseline).expect("Should have baseline");
 
         // Baseline should have OverrideMode::None or Patch (not Force)
-        assert_ne!(
-            baseline.override_mode,
-            OverrideMode::Force,
-            "Baseline should not be forced"
-        );
+        assert_ne!(baseline.override_mode, OverrideMode::Force, "Baseline should not be forced");
     }
 
     #[test]
@@ -107,11 +101,7 @@ mod tests {
         // Count baselines
         let baseline_count = matrix.base_versions.iter().filter(|v| v.is_baseline).count();
 
-        assert_eq!(
-            baseline_count, 1,
-            "Should have exactly one baseline, found {}",
-            baseline_count
-        );
+        assert_eq!(baseline_count, 1, "Should have exactly one baseline, found {}", baseline_count);
     }
 
     #[test]
@@ -139,10 +129,7 @@ mod tests {
         let matrix = build_test_matrix(&args).expect("Should build matrix");
 
         // First dependent should be baseline
-        assert!(
-            matrix.dependents[0].is_baseline,
-            "First dependent should be marked as baseline"
-        );
+        assert!(matrix.dependents[0].is_baseline, "First dependent should be marked as baseline");
 
         // Other dependents should not be baseline
         for dep in matrix.dependents.iter().skip(1) {

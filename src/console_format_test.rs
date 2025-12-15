@@ -1,7 +1,7 @@
-/// Tests for console formatting module
-///
-/// These tests ensure console output formatting remains stable
-/// and matches our reference fixtures.
+// Tests for console formatting module
+//
+// These tests ensure console output formatting remains stable
+// and matches our reference fixtures.
 
 #[cfg(test)]
 mod tests {
@@ -79,11 +79,7 @@ mod tests {
 
     #[test]
     fn test_calculate_offered_width() {
-        let versions = vec![
-            "0.8.50".to_string(),
-            "0.8.51".to_string(),
-            "0.8.52-alpha.1".to_string(),
-        ];
+        let versions = vec!["0.8.50".to_string(), "0.8.51".to_string(), "0.8.52-alpha.1".to_string()];
 
         let width = TableWidths::calculate_offered_width(&versions, "0.8.52", false);
 

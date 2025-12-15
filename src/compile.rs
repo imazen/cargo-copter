@@ -39,6 +39,7 @@ pub fn init_failure_log(log_path: PathBuf) {
 }
 
 /// Log a compilation failure to the failure log file with proper locking
+#[allow(clippy::too_many_arguments)]
 pub fn log_failure(
     dependent: &str,
     dependent_version: &str,
@@ -63,6 +64,7 @@ pub fn log_failure(
 }
 
 /// Log a compilation failure with parsed diagnostics for better readability
+#[allow(clippy::too_many_arguments)]
 pub fn log_failure_with_diagnostics(
     dependent: &str,
     dependent_version: &str,
@@ -117,26 +119,25 @@ pub fn log_failure_with_diagnostics(
 
     // If this is a build/check failure, also write to build-specific log
     let is_build_failure = command.contains("cargo fetch") || command.contains("cargo check");
-    if is_build_failure {
-        if let Some(build_path) = build_log_path {
-            write_failure_to_log(
-                &build_path,
-                "BUILD FAILURE",
-                dependent,
-                dependent_version,
-                base_crate,
-                test_label,
-                command,
-                exit_code,
-                stderr,
-                diagnostics,
-                is_duplicate,
-            );
-        }
+    if is_build_failure && let Some(build_path) = build_log_path {
+        write_failure_to_log(
+            &build_path,
+            "BUILD FAILURE",
+            dependent,
+            dependent_version,
+            base_crate,
+            test_label,
+            command,
+            exit_code,
+            stderr,
+            diagnostics,
+            is_duplicate,
+        );
     }
 }
 
 /// Helper function to write a failure entry to a specific log file
+#[allow(clippy::too_many_arguments)]
 fn write_failure_to_log(
     log_path: &Path,
     log_type: &str, // "FAILURE" or "BUILD FAILURE"
@@ -288,7 +289,7 @@ fn verify_dependency_version(crate_path: &Path, dep_name: &str) -> Option<String
     // Try using cargo metadata which works better with path dependencies
     // Don't use --no-deps because we need to see resolved dependencies
     let output =
-        Command::new("cargo").args(&["metadata", "--format-version=1"]).current_dir(crate_path).output().ok()?;
+        Command::new("cargo").args(["metadata", "--format-version=1"]).current_dir(crate_path).output().ok()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -306,24 +307,23 @@ fn verify_dependency_version(crate_path: &Path, dep_name: &str) -> Option<String
     };
 
     // First try resolve.nodes to find the actually-used version (handles multiple versions correctly)
-    if let Some(resolve) = metadata.get("resolve") {
-        if let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array()) {
-            for node in nodes {
-                if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
-                    for dep in deps {
-                        if let Some(name) = dep.get("name").and_then(|n| n.as_str()) {
-                            if name == dep_name {
-                                if let Some(pkg) = dep.get("pkg").and_then(|p| p.as_str()) {
-                                    // pkg format: "registry+https://...#crate-name@version" or "path+file://...#crate-name@version"
-                                    // Extract version by splitting on "#" then "@"
-                                    if let Some(after_hash) = pkg.split('#').nth(1) {
-                                        if let Some(version) = after_hash.split('@').nth(1) {
-                                            debug!("✓ Verified {} version: {}", dep_name, version);
-                                            return Some(version.to_string());
-                                        }
-                                    }
-                                }
-                            }
+    if let Some(resolve) = metadata.get("resolve")
+        && let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array())
+    {
+        for node in nodes {
+            if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
+                for dep in deps {
+                    if let Some(name) = dep.get("name").and_then(|n| n.as_str())
+                        && name == dep_name
+                        && let Some(pkg) = dep.get("pkg").and_then(|p| p.as_str())
+                    {
+                        // pkg format: "registry+https://...#crate-name@version" or "path+file://...#crate-name@version"
+                        // Extract version by splitting on "#" then "@"
+                        if let Some(after_hash) = pkg.split('#').nth(1)
+                            && let Some(version) = after_hash.split('@').nth(1)
+                        {
+                            debug!("✓ Verified {} version: {}", dep_name, version);
+                            return Some(version.to_string());
                         }
                     }
                 }
@@ -342,13 +342,12 @@ fn verify_dependency_version(crate_path: &Path, dep_name: &str) -> Option<String
 
     // Find the package with matching name
     for pkg in packages {
-        if let Some(name) = pkg.get("name").and_then(|n| n.as_str()) {
-            if name == dep_name {
-                if let Some(version) = pkg.get("version").and_then(|v| v.as_str()) {
-                    debug!("✓ Verified {} version: {}", dep_name, version);
-                    return Some(version.to_string());
-                }
-            }
+        if let Some(name) = pkg.get("name").and_then(|n| n.as_str())
+            && name == dep_name
+            && let Some(version) = pkg.get("version").and_then(|v| v.as_str())
+        {
+            debug!("✓ Verified {} version: {}", dep_name, version);
+            return Some(version.to_string());
         }
     }
 
@@ -363,7 +362,7 @@ fn extract_dependency_spec(crate_path: &Path, dep_name: &str) -> Result<Option<S
 
     // Run cargo metadata to get dependency specs
     let output = Command::new("cargo")
-        .args(&["metadata", "--format-version=1"])
+        .args(["metadata", "--format-version=1"])
         .current_dir(crate_path)
         .output()
         .map_err(|e| format!("Failed to run cargo metadata: {}", e))?;
@@ -377,11 +376,8 @@ fn extract_dependency_spec(crate_path: &Path, dep_name: &str) -> Result<Option<S
     let parsed = metadata::parse_metadata(&stdout)?;
 
     // Get the root package (the dependent being tested)
-    let root_package_id = if let Some(resolve) = &parsed.resolve {
-        resolve.get("root").and_then(|r| r.as_str())
-    } else {
-        None
-    };
+    let root_package_id =
+        if let Some(resolve) = &parsed.resolve { resolve.get("root").and_then(|r| r.as_str()) } else { None };
 
     if let Some(root_id) = root_package_id {
         // Use the metadata module to get the spec
@@ -407,29 +403,26 @@ fn extract_spec_from_toml(crate_path: &Path, dep_name: &str) -> Result<Option<St
     debug!("Extracting spec from Cargo.toml for '{}' in {:?}", dep_name, crate_path);
 
     let toml_path = crate_path.join("Cargo.toml");
-    let content = fs::read_to_string(&toml_path)
-        .map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
+    let content = fs::read_to_string(&toml_path).map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
 
-    let doc: DocumentMut = content.parse()
-        .map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
+    let doc: DocumentMut = content.parse().map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
 
     // Check [dependencies] section
-    if let Some(deps) = doc.get("dependencies").and_then(|s| s.as_table_like()) {
-        if let Some(dep_value) = deps.get(dep_name) {
-            // Handle different formats:
-            // 1. String: rgb = "0.8.27"
-            if let Some(version_str) = dep_value.as_str() {
-                return Ok(Some(version_str.to_string()));
-            }
+    if let Some(deps) = doc.get("dependencies").and_then(|s| s.as_table_like())
+        && let Some(dep_value) = deps.get(dep_name)
+    {
+        // Handle different formats:
+        // 1. String: rgb = "0.8.27"
+        if let Some(version_str) = dep_value.as_str() {
+            return Ok(Some(version_str.to_string()));
+        }
 
-            // 2. Table: [dependencies.rgb] or inline table
-            if let Some(table) = dep_value.as_table_like() {
-                if let Some(version_value) = table.get("version") {
-                    if let Some(version_str) = version_value.as_str() {
-                        return Ok(Some(version_str.to_string()));
-                    }
-                }
-            }
+        // 2. Table: [dependencies.rgb] or inline table
+        if let Some(table) = dep_value.as_table_like()
+            && let Some(version_value) = table.get("version")
+            && let Some(version_str) = version_value.as_str()
+        {
+            return Ok(Some(version_str.to_string()));
         }
     }
 
@@ -477,37 +470,37 @@ fn apply_dependency_override(
             let sections = vec!["dependencies", "dev-dependencies", "build-dependencies"];
 
             for section in sections {
-                if let Some(deps) = doc.get_mut(section).and_then(|s| s.as_table_mut()) {
-                    if let Some(dep) = deps.get_mut(dep_name) {
-                        debug!("Force-replacing {} in [{}] with path {:?}", dep_name, section, override_path);
+                if let Some(deps) = doc.get_mut(section).and_then(|s| s.as_table_mut())
+                    && let Some(dep) = deps.get_mut(dep_name)
+                {
+                    debug!("Force-replacing {} in [{}] with path {:?}", dep_name, section, override_path);
 
-                        // Preserve existing fields (optional, default-features, features, etc.)
-                        let mut new_dep = toml_edit::InlineTable::new();
-                        new_dep.insert("path", override_path.display().to_string().into());
+                    // Preserve existing fields (optional, default-features, features, etc.)
+                    let mut new_dep = toml_edit::InlineTable::new();
+                    new_dep.insert("path", override_path.display().to_string().into());
 
-                        // Copy fields from original dependency if it's a table
-                        if let Some(old_table) = dep.as_inline_table() {
-                            // Preserve important fields
-                            for key in ["optional", "default-features", "features", "package"] {
-                                if let Some(value) = old_table.get(key) {
-                                    new_dep.insert(key, value.clone());
-                                    debug!("Preserving field '{}' = {:?}", key, value);
-                                }
-                            }
-                        } else if let Some(old_table) = dep.as_table_like() {
-                            // Handle table-like dependencies
-                            for key in ["optional", "default-features", "features", "package"] {
-                                if let Some(value) = old_table.get(key) {
-                                    if let Some(v) = value.as_value() {
-                                        new_dep.insert(key, v.clone());
-                                        debug!("Preserving field '{}' = {:?}", key, v);
-                                    }
-                                }
+                    // Copy fields from original dependency if it's a table
+                    if let Some(old_table) = dep.as_inline_table() {
+                        // Preserve important fields
+                        for key in ["optional", "default-features", "features", "package"] {
+                            if let Some(value) = old_table.get(key) {
+                                new_dep.insert(key, value.clone());
+                                debug!("Preserving field '{}' = {:?}", key, value);
                             }
                         }
-
-                        *dep = toml_edit::Item::Value(toml_edit::Value::InlineTable(new_dep));
+                    } else if let Some(old_table) = dep.as_table_like() {
+                        // Handle table-like dependencies
+                        for key in ["optional", "default-features", "features", "package"] {
+                            if let Some(value) = old_table.get(key)
+                                && let Some(v) = value.as_value()
+                            {
+                                new_dep.insert(key, v.clone());
+                                debug!("Preserving field '{}' = {:?}", key, v);
+                            }
+                        }
                     }
+
+                    *dep = toml_edit::Item::Value(toml_edit::Value::InlineTable(new_dep));
                 }
             }
 
@@ -645,15 +638,15 @@ impl ThreeStepResult {
         if !self.fetch.success {
             return false;
         }
-        if let Some(ref check) = self.check {
-            if !check.success {
-                return false;
-            }
+        if let Some(ref check) = self.check
+            && !check.success
+        {
+            return false;
         }
-        if let Some(ref test) = self.test {
-            if !test.success {
-                return false;
-            }
+        if let Some(ref test) = self.test
+            && !test.success
+        {
+            return false;
         }
         true
     }
@@ -663,15 +656,15 @@ impl ThreeStepResult {
         if !self.fetch.success {
             return Some(&self.fetch);
         }
-        if let Some(ref check) = self.check {
-            if !check.success {
-                return Some(check);
-            }
+        if let Some(ref check) = self.check
+            && !check.success
+        {
+            return Some(check);
         }
-        if let Some(ref test) = self.test {
-            if !test.success {
-                return Some(test);
-            }
+        if let Some(ref test) = self.test
+            && !test.success
+        {
+            return Some(test);
         }
         None
     }
@@ -870,8 +863,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                     "Failed to extract dependency spec for '{}' from {:?}. \
                     This should never happen if fetch succeeded in non-force mode. \
                     The dependency must exist in the manifest.",
-                    base_crate_name,
-                    crate_path
+                    base_crate_name, crate_path
                 );
             }
             extracted
@@ -887,13 +879,13 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
 
     if fetch.failed() {
         // Log failure with diagnostics
-        if let (Some(ref dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
+        if let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
             log_failure_with_diagnostics(
                 dep_info.name,
                 dep_info.version,
                 base_crate_name,
                 label,
-                &format!("cargo fetch"),
+                "cargo fetch",
                 None,
                 &fetch.stdout,
                 &fetch.stderr,
@@ -919,13 +911,13 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         let result = compile_crate(crate_path, CompileStep::Check, override_spec)?;
         if result.failed() {
             // Log failure with diagnostics
-            if let (Some(ref dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
+            if let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
                 log_failure_with_diagnostics(
                     dep_info.name,
                     dep_info.version,
                     base_crate_name,
                     label,
-                    &format!("cargo check"),
+                    "cargo check",
                     None,
                     &result.stdout,
                     &result.stderr,
@@ -963,22 +955,21 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
     };
 
     // Log test failure if test failed
-    if let Some(ref test_result) = test {
-        if test_result.failed() {
-            if let (Some(ref dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
-                log_failure_with_diagnostics(
-                    dep_info.name,
-                    dep_info.version,
-                    base_crate_name,
-                    label,
-                    &format!("cargo test"),
-                    None,
-                    &test_result.stdout,
-                    &test_result.stderr,
-                    &test_result.diagnostics,
-                );
-            }
-        }
+    if let Some(ref test_result) = test
+        && test_result.failed()
+        && let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label)
+    {
+        log_failure_with_diagnostics(
+            dep_info.name,
+            dep_info.version,
+            base_crate_name,
+            label,
+            "cargo test",
+            None,
+            &test_result.stdout,
+            &test_result.stderr,
+            &test_result.diagnostics,
+        );
     }
 
     // Cleanup: Always restore Cargo.toml to original state
@@ -1010,7 +1001,7 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
     debug!("extracting all versions of '{}' from cargo metadata", crate_name);
 
     // Run cargo metadata to get resolved dependencies
-    let output = match Command::new("cargo").args(&["metadata", "--format-version=1"]).current_dir(crate_dir).output() {
+    let output = match Command::new("cargo").args(["metadata", "--format-version=1"]).current_dir(crate_dir).output() {
         Ok(o) => o,
         Err(e) => {
             debug!("failed to run cargo metadata: {}", e);
@@ -1081,12 +1072,12 @@ fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String
         }
 
         // Log to failure log file if initialized
-        if let Some(ref log_path) = *FAILURE_LOG.lock().unwrap() {
-            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(log_path) {
-                let _ = writeln!(file, "\n=== Multi-version detection for '{}' ===", crate_name);
-                for (spec, resolved, dependent) in &all_versions {
-                    let _ = writeln!(file, "  {} requires {} → resolved to {}", dependent, spec, resolved);
-                }
+        if let Some(ref log_path) = *FAILURE_LOG.lock().unwrap()
+            && let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(log_path)
+        {
+            let _ = writeln!(file, "\n=== Multi-version detection for '{}' ===", crate_name);
+            for (spec, resolved, dependent) in &all_versions {
+                let _ = writeln!(file, "  {} requires {} → resolved to {}", dependent, spec, resolved);
             }
         }
     }
