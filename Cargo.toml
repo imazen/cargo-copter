@@ -1,5 +1,5 @@
 [package]
-version = "0.2.2"
+version = "0.2.3"
 name = "cargo-copter"
 default-run = "cargo-copter"
 authors = ["Lilith River <lilith@imazen.io"]
