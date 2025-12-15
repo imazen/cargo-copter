@@ -1,15 +1,15 @@
 [package]
+version = "0.2.0"
 name = "cargo-copter"
-version = "0.1.1"
+default-run = "cargo-copter"
 authors = ["Lilith River <lilith@imazen.io"]
 description = "Test dependents against multiple versions of your crate (or your local WIP before publishing). Inspired by the cargo-crusader"
 license = "MIT/Apache-2.0"
 repository = "https://github.com/imazen/cargo-copter"
 edition = "2024"
 readme = "README.md"
-keywords = ["cargo", "testing", "dependencies", "compatibility", "ci"]
-categories = ["development-tools::cargo-plugins", "development-tools::testing"]
-
+keywords = ["cargo", "testing", "dependencies", "compatibility", "ci", "cargo-subcommand", "semver", "cargo-crusader"]
+categories = ["development-tools::cargo-plugins", "development-tools::testing", "command-line-utilities"]
 # cargo-binstall configuration
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.{ archive-format }"

@@ -82,6 +82,25 @@ fn main() {
         console_format::set_console_width(width);
     }
 
+    // Create report directory
+    let report_dir = PathBuf::from("copter-report");
+    if let Err(e) = fs::create_dir_all(&report_dir) {
+        eprintln!("Warning: Failed to create report directory: {}", e);
+    }
+    // Append copter-report/ to .gitignore if it exists and doesn't already have it
+    let gitignore_path = PathBuf::from(".gitignore");
+    if gitignore_path.exists() {
+        if let Ok(content) = fs::read_to_string(&gitignore_path) {
+            if !content.lines().any(|line| line.trim() == "copter-report" || line.trim() == "copter-report/") {
+                let entry = if content.ends_with('\n') { "copter-report/\n" } else { "\ncopter-report/\n" };
+                let _ = fs::OpenOptions::new().append(true).open(&gitignore_path).and_then(|mut f| {
+                    use std::io::Write;
+                    f.write_all(entry.as_bytes())
+                });
+            }
+        }
+    }
+
     // Build test matrix
     let matrix = match config::build_test_matrix(&args) {
         Ok(m) => m,
@@ -115,6 +134,8 @@ fn main() {
     let mut offered_rows = Vec::new();
     let mut prev_dependent: Option<String> = None;
     let mut prev_error: Option<String> = None;
+    let report_dir_clone = report_dir.clone();
+    let staging_dir = matrix.staging_dir.clone();
 
     let _test_results = match runner::run_tests(matrix.clone(), |result| {
         // Convert to OfferedRow immediately
@@ -134,6 +155,11 @@ fn main() {
         // Print the row immediately
         report::print_offered_row(&row, is_last, prev_error.as_deref(), args.error_lines);
 
+        // Write failure log for failed tests
+        if !result.execution.is_success() {
+            report::write_failure_log(&report_dir_clone, &staging_dir, result);
+        }
+
         // Update tracking
         prev_error = report::extract_error_text(&row);
         prev_dependent = Some(row.primary.dependent_name.clone());
@@ -152,7 +178,7 @@ fn main() {
     report::print_table_footer();
 
     // Generate non-console reports (markdown, JSON)
-    generate_non_console_reports(&offered_rows, &args, &matrix);
+    generate_non_console_reports(&offered_rows, &args, &matrix, &report_dir);
 
     // If using top-dependents and there were failures, suggest a targeted re-test
     if args.dependents.is_empty() && args.dependent_paths.is_empty() {
@@ -217,13 +243,13 @@ fn print_test_plan(matrix: &TestMatrix, args: &cli::CliArgs) {
 }
 
 /// Generate non-console reports (markdown, JSON) and comparison table
-fn generate_non_console_reports(rows: &[OfferedRow], args: &cli::CliArgs, matrix: &TestMatrix) {
+fn generate_non_console_reports(rows: &[OfferedRow], _args: &cli::CliArgs, matrix: &TestMatrix, report_dir: &PathBuf) {
     // Print comparison table
     let comparison_stats = report::generate_comparison_table(rows);
     report::print_comparison_table(&comparison_stats);
 
     // Export markdown report
-    let markdown_path = PathBuf::from("copter-report.md");
+    let markdown_path = report_dir.join("report.md");
     let test_plan = format_test_plan_string(matrix);
     let this_path = matrix.base_versions.iter().find_map(|v| match &v.crate_ref.source {
         CrateSource::Local { path } => Some(path.display().to_string()),
@@ -244,7 +270,7 @@ fn generate_non_console_reports(rows: &[OfferedRow], args: &cli::CliArgs, matrix
     }
 
     // Export JSON report
-    let json_path = PathBuf::from("copter-report.json");
+    let json_path = report_dir.join("report.json");
     match report::export_json_report(
         rows,
         &json_path,

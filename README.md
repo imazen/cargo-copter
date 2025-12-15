@@ -66,8 +66,111 @@ Markdown report: copter-report.md
 Detailed failure logs: copter-failures.log
 
 💡 To analyze API changes that may have caused regressions:
-   Install: cargo install cargo-public-api
-   cargo public-api diff .copter/staging/rgb-baseline .copter/staging/rgb-0.8.91-alpha.3
+   cargo install cargo-public-api
+   cargo public-api diff rgb@0.8.50 rgb@0.8.91  # compare two crates.io versions
+   cd .copter/staging/rgb-0.8.91 && cargo public-api diff 0.8.50  # compare local against crates.io
+```
+
+## GitHub Action
+
+Use cargo-copter in your CI to catch breaking changes before publishing:
+
+```yaml
+# .github/workflows/copter.yml
+name: Reverse Dependency Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: imazen/cargo-copter@v1
+        with:
+          top-dependents: 5
+```
+
+### Action Inputs
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `path` | Path to crate | `.` |
+| `top-dependents` | Number of dependents to test | `5` |
+| `dependents` | Space-separated list of specific dependents | |
+| `test-versions` | Space-separated versions to test | |
+| `force-versions` | Space-separated versions to force | |
+| `only-check` | Skip tests, only run cargo check | `false` |
+| `only-fetch` | Skip check and test | `false` |
+| `error-lines` | Max error lines per failure | `10` |
+| `fail-on-regression` | Fail if regressions detected | `true` |
+| `version` | cargo-copter version to use | `latest` |
+| `cache` | Cache staging directory | `true` |
+
+### Action Outputs
+
+| Output | Description |
+|--------|-------------|
+| `passed` | Number of passed dependents |
+| `regressed` | Number of regressions |
+| `broken` | Number already broken at baseline |
+| `report-path` | Path to JSON report |
+
+### Example: PR vs Main Branch
+
+```yaml
+jobs:
+  # Fast check for PRs
+  pr-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: imazen/cargo-copter@v1
+        with:
+          top-dependents: 3
+          only-check: true
+
+  # Thorough check on main
+  full-check:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: imazen/cargo-copter@v1
+        with:
+          top-dependents: 10
+```
+
+## Installation
+
+```bash
+# With cargo-binstall (fastest)
+cargo binstall cargo-copter
+
+# With cargo install
+cargo install cargo-copter
+
+# From source
+git clone https://github.com/imazen/cargo-copter
+cd cargo-copter && cargo build --release
+```
+
+## Docker
+
+```bash
+# Run in Docker (for security isolation)
+cargo-copter --docker --top-dependents 5
+
+# Or directly with Docker
+docker run --rm -v $(pwd):/workspace ghcr.io/imazen/cargo-copter:latest \
+  --path /workspace --top-dependents 5
 ```
 
 ## Common Usage
@@ -155,10 +258,27 @@ Downloaded .crate files: `~/.cache/cargo-copter/crate-cache/` (or platform equiv
 
 ## Reports
 
-- **Console**: Live streaming table output
-- **HTML**: `copter-report.html` with visual summaries
-- **Markdown**: `copter-report.md` optimized for LLM analysis
-- **Failure log**: `copter-failures.log` with deduplicated errors
+All reports are saved to `./copter-report/`:
+
+- **Markdown**: `report.md` - optimized for LLM analysis
+- **JSON**: `report.json` - structured data for CI/automation
+- **Failure logs**: `{dependent}-{version}_{base-version}.txt` - full compiler output for each failure
+
+Failure logs include the full path to the staged source code for easy navigation:
+```
+# Failure Log: image 0.25.9 with base crate version 0.8.52
+# Generated: 2025-12-15 10:30:00
+# Source: /home/user/.cache/cargo-copter/staging/image-0.25.9
+
+=== CHECK (cargo check) ===
+Status: FAILED (1.7s)
+
+error[E0277]: the trait bound `Rgb<u8>: From<...>` is not satisfied
+  --> src/lib.rs:42:15
+   ...
+```
+
+The `copter-report/` directory is automatically added to `.gitignore` if one exists.
 
 ## Table Symbols
 

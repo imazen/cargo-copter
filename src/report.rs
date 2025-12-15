@@ -8,10 +8,10 @@
 ///
 /// Console rendering is handled by the console_format module.
 use crate::console_format::{self, ComparisonStats};
-use crate::types::{CommandType, OfferedRow, VersionSource};
+use crate::types::{CommandType, OfferedRow, TestResult, VersionSource};
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use term::color::Color;
 
 //
@@ -878,4 +878,86 @@ fn format_offered_row_string(row: &OfferedRow, is_last_in_group: bool) -> String
     }
 
     output
+}
+
+/// Write raw cargo output to a failure log file
+pub fn write_failure_log(report_dir: &Path, staging_dir: &Path, result: &TestResult) {
+    let dependent_name = &result.dependent.name;
+    let dependent_version = result.dependent.version.display();
+    let base_version = result.base_version.version.display();
+
+    // Create filename: dependent-version_base-version.txt
+    let filename = format!("{}-{}_{}.txt", dependent_name, dependent_version, base_version);
+    let log_path = report_dir.join(&filename);
+
+    // Build the staging path for this dependent
+    let dependent_staging_path = staging_dir.join(format!("{}-{}", dependent_name, dependent_version));
+
+    let mut content = String::new();
+    content.push_str(&format!(
+        "# Failure Log: {} {} with base crate version {}\n",
+        dependent_name, dependent_version, base_version
+    ));
+    content.push_str(&format!(
+        "# Generated: {}\n",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+    ));
+    content.push_str(&format!(
+        "# Source: {}\n\n",
+        dependent_staging_path.canonicalize().unwrap_or(dependent_staging_path).display()
+    ));
+
+    // Helper to write diagnostics or fall back to stderr
+    fn write_step_output(content: &mut String, result: &crate::compile::CompileResult, step_name: &str) {
+        content.push_str(&format!("=== {} ===\n", step_name));
+        content.push_str(&format!("Status: FAILED ({:.1}s)\n\n", result.duration.as_secs_f64()));
+
+        // Prefer parsed diagnostics (human-readable) over raw stderr
+        if !result.diagnostics.is_empty() {
+            for diag in &result.diagnostics {
+                content.push_str(&diag.rendered);
+                if !diag.rendered.ends_with('\n') {
+                    content.push('\n');
+                }
+            }
+        } else if !result.stderr.is_empty() {
+            // Fall back to stderr if no diagnostics parsed
+            content.push_str(&result.stderr);
+            if !result.stderr.ends_with('\n') {
+                content.push('\n');
+            }
+        }
+        content.push('\n');
+    }
+
+    // Write fetch step output if it failed
+    if !result.execution.fetch.success {
+        write_step_output(&mut content, &result.execution.fetch, "FETCH (cargo fetch)");
+    }
+
+    // Write check step output if it failed
+    if let Some(ref check) = result.execution.check {
+        if !check.success {
+            write_step_output(&mut content, check, "CHECK (cargo check)");
+        }
+    }
+
+    // Write test step output if it failed
+    if let Some(ref test) = result.execution.test {
+        if !test.success {
+            write_step_output(&mut content, test, "TEST (cargo test)");
+        }
+    }
+
+    // Write to file
+    match File::create(&log_path) {
+        Ok(mut file) => {
+            if let Err(e) = file.write_all(content.as_bytes()) {
+                eprintln!("Warning: Failed to write failure log {}: {}", filename, e);
+            }
+        }
+        Err(e) => {
+            eprintln!("Warning: Failed to create failure log {}: {}", filename, e);
+        }
+    }
 }
