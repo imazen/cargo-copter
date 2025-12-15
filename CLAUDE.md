@@ -37,6 +37,23 @@ cargo test
 ./target/release/cargo-copter --crate rgb --test-versions "0.8.50 0.8.51"
 ```
 
+## Code Formatting
+
+**Before starting any task:**
+1. Run `cargo fmt --check` to see if formatting is needed
+2. If it fails AND working tree is clean (`git status` shows no modified files, ignoring untracked):
+   - Run `cargo fmt`
+   - Commit with message `cargo fmt`
+
+**After every code change:**
+- Run `cargo fmt` immediately after modifying any `.rs` file
+- This keeps the codebase formatted at all times
+
+```bash
+cargo fmt --check  # Check if formatting needed
+cargo fmt          # Apply formatting
+```
+
 ## Architecture Overview
 
 The codebase uses a **unified multi-version architecture** where all test scenarios (baseline, WIP, explicit versions) are represented uniformly:
