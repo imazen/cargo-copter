@@ -7,6 +7,14 @@
 mod tests {
     use crate::console_format::*;
 
+    /// Standard width for tests to ensure reproducible output
+    const TEST_CONSOLE_WIDTH: usize = 120;
+
+    /// Set up test environment with fixed console width
+    fn setup_test_width() {
+        set_console_width(TEST_CONSOLE_WIDTH);
+    }
+
     #[test]
     fn test_display_width_ascii() {
         assert_eq!(display_width("hello"), 5);
@@ -54,7 +62,8 @@ mod tests {
 
     #[test]
     fn test_table_widths_calculation() {
-        let widths = TableWidths::new(120);
+        setup_test_width();
+        let widths = TableWidths::new(TEST_CONSOLE_WIDTH);
 
         // Verify total adds up correctly (120 - 6 borders = 114 for content)
         let total_content = widths.offered + widths.spec + widths.resolved + widths.dependent + widths.result;
@@ -122,6 +131,7 @@ mod tests {
 
     #[test]
     fn test_table_header_format_contains_all_columns() {
+        setup_test_width();
         init_table_widths(&[], "0.8.52", false);
 
         let header = format_table_header("test-crate", "0.8.52", 5, None, None);
@@ -142,6 +152,7 @@ mod tests {
 
     #[test]
     fn test_table_header_with_test_plan() {
+        setup_test_width();
         init_table_widths(&[], "0.8.52", false);
 
         let test_plan = "  Dependents: foo, bar\n  versions: baseline, 0.8.51\n  2 × 2 = 4 tests";
@@ -155,6 +166,7 @@ mod tests {
 
     #[test]
     fn test_table_header_with_this_path() {
+        setup_test_width();
         init_table_widths(&[], "0.8.52", false);
 
         let header = format_table_header("test-crate", "0.8.52", 1, None, Some("/path/to/crate"));
@@ -166,6 +178,7 @@ mod tests {
 
     #[test]
     fn test_table_footer_matches_header_width() {
+        setup_test_width();
         init_table_widths(&[], "0.8.52", false);
 
         let header = format_table_header("test", "0.8.52", 1, None, None);

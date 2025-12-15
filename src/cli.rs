@@ -157,6 +157,7 @@ mod tests {
             clean: false,
             error_lines: 10,
             skip_normal_testing: false,
+            console_width: None,
         };
         assert!(args.validate().is_err());
     }
@@ -182,6 +183,7 @@ mod tests {
             clean: false,
             error_lines: 10,
             skip_normal_testing: false,
+            console_width: None,
         };
         let result = args.validate();
         std::fs::remove_file("./Cargo.toml.test").ok();

@@ -338,8 +338,10 @@ impl TableWidths {
 /// Get terminal width or default to DEFAULT_TERMINAL_WIDTH
 fn get_terminal_width() -> usize {
     // Check if width override is set
-    if let Some(width) = OVERRIDE_WIDTH.get() {
-        return *width;
+    if let Ok(guard) = OVERRIDE_WIDTH.read() {
+        if let Some(width) = *guard {
+            return width;
+        }
     }
 
     if let Some((Width(w), _)) = terminal_size() {
@@ -349,25 +351,59 @@ fn get_terminal_width() -> usize {
     }
 }
 
-// Table widths - initialized once with actual version data
+// Table widths - initialized once with actual version data (production), or resettable (tests)
 static WIDTHS: OnceLock<TableWidths> = OnceLock::new();
-static OVERRIDE_WIDTH: OnceLock<usize> = OnceLock::new();
+static OVERRIDE_WIDTH: std::sync::RwLock<Option<usize>> = std::sync::RwLock::new(None);
+static OVERRIDE_WIDTHS: std::sync::RwLock<Option<TableWidths>> = std::sync::RwLock::new(None);
 
-/// Set console width override (for testing)
+/// Set console width override (for testing or CLI --console-width)
 pub fn set_console_width(width: usize) {
-    let _ = OVERRIDE_WIDTH.set(width);
+    if let Ok(mut w) = OVERRIDE_WIDTH.write() {
+        *w = Some(width);
+    }
+    // Also clear any cached widths so they get recalculated
+    if let Ok(mut w) = OVERRIDE_WIDTHS.write() {
+        *w = None;
+    }
+}
+
+/// Clear console width override (for testing)
+#[cfg(test)]
+pub fn clear_console_width() {
+    if let Ok(mut w) = OVERRIDE_WIDTH.write() {
+        *w = None;
+    }
+    if let Ok(mut w) = OVERRIDE_WIDTHS.write() {
+        *w = None;
+    }
 }
 
 /// Initialize table widths based on versions being tested
 pub fn init_table_widths(versions: &[String], display_version: &str, force_versions: bool) {
     let offered_width = TableWidths::calculate_offered_width(versions, display_version, force_versions);
     let widths = TableWidths::new_with_offered(get_terminal_width(), Some(offered_width));
-    let _ = WIDTHS.set(widths); // Ignore error if already initialized
+
+    // For tests: use the resettable override
+    if let Ok(mut w) = OVERRIDE_WIDTHS.write() {
+        *w = Some(widths);
+        return;
+    }
+
+    // For production: use the OnceLock (first initialization wins)
+    let _ = WIDTHS.set(widths);
 }
 
 /// Get table widths (with fallback to defaults if not initialized)
-pub fn get_widths() -> &'static TableWidths {
-    WIDTHS.get_or_init(|| TableWidths::new(get_terminal_width()))
+pub fn get_widths() -> TableWidths {
+    // Check override first (for tests or when width is dynamically set)
+    if let Ok(guard) = OVERRIDE_WIDTHS.read() {
+        if let Some(widths) = *guard {
+            return widths;
+        }
+    }
+
+    // Fall back to static widths
+    *WIDTHS.get_or_init(|| TableWidths::new(get_terminal_width()))
 }
 
 //
