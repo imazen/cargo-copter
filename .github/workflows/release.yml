@@ -108,6 +108,9 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Test build
+        run: cargo test
+
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
         env:
