@@ -1,0 +1,235 @@
+# GitHub Action for cargo-copter
+#
+# Tests your Rust crate against its reverse dependencies to catch breaking changes
+# before you publish.
+#
+# Usage:
+#   - uses: imazen/cargo-copter@v1
+#     with:
+#       top-dependents: 5
+#
+# See https://github.com/imazen/cargo-copter for full documentation.
+
+name: 'Cargo Copter'
+description: 'Test your Rust crate against reverse dependencies to catch breaking changes'
+author: 'Lilith River'
+
+branding:
+  icon: 'check-circle'
+  color: 'orange'
+
+inputs:
+  path:
+    description: 'Path to the crate to test (defaults to current directory)'
+    required: false
+    default: '.'
+  top-dependents:
+    description: 'Number of top dependents to test (by download count)'
+    required: false
+    default: '5'
+  dependents:
+    description: 'Space-separated list of specific dependents to test (overrides top-dependents)'
+    required: false
+    default: ''
+  test-versions:
+    description: 'Space-separated list of versions to test (e.g., "0.8.50 0.8.51")'
+    required: false
+    default: ''
+  force-versions:
+    description: 'Space-separated list of versions to force (bypasses semver)'
+    required: false
+    default: ''
+  only-check:
+    description: 'Only run cargo check, skip tests (faster)'
+    required: false
+    default: 'false'
+  only-fetch:
+    description: 'Only fetch dependencies, skip check and test (fastest)'
+    required: false
+    default: 'false'
+  error-lines:
+    description: 'Maximum error lines to show per failure (0 for unlimited)'
+    required: false
+    default: '10'
+  fail-on-regression:
+    description: 'Fail the action if any regressions are detected'
+    required: false
+    default: 'true'
+  version:
+    description: 'Version of cargo-copter to use (e.g., "0.1.1", "latest")'
+    required: false
+    default: 'latest'
+  cache:
+    description: 'Enable caching of staging directory'
+    required: false
+    default: 'true'
+
+outputs:
+  passed:
+    description: 'Number of dependents that passed'
+    value: ${{ steps.run.outputs.passed }}
+  regressed:
+    description: 'Number of dependents with regressions'
+    value: ${{ steps.run.outputs.regressed }}
+  broken:
+    description: 'Number of dependents already broken at baseline'
+    value: ${{ steps.run.outputs.broken }}
+  report-path:
+    description: 'Path to the generated JSON report'
+    value: ${{ steps.run.outputs.report-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Cache cargo-copter staging
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.copter
+          .copter
+        key: copter-${{ runner.os }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+        restore-keys: |
+          copter-${{ runner.os }}-
+
+    - name: Install cargo-copter
+      shell: bash
+      run: |
+        set -e
+
+        VERSION="${{ inputs.version }}"
+
+        if [ "$VERSION" = "latest" ]; then
+          # Get latest release version
+          VERSION=$(curl -s https://api.github.com/repos/imazen/cargo-copter/releases/latest | grep '"tag_name":' | sed -E 's/.*"v?([^"]+)".*/\1/')
+        fi
+
+        # Remove 'v' prefix if present
+        VERSION="${VERSION#v}"
+
+        echo "Installing cargo-copter v${VERSION}..."
+
+        # Determine platform
+        case "${{ runner.os }}" in
+          Linux)
+            TARGET="x86_64-unknown-linux-gnu"
+            ;;
+          macOS)
+            TARGET="x86_64-apple-darwin"
+            ;;
+          Windows)
+            TARGET="x86_64-pc-windows-msvc"
+            ;;
+          *)
+            echo "Unsupported OS: ${{ runner.os }}"
+            exit 1
+            ;;
+        esac
+
+        # Download and extract
+        URL="https://github.com/imazen/cargo-copter/releases/download/v${VERSION}/cargo-copter-${TARGET}.tar.gz"
+        echo "Downloading from: $URL"
+
+        curl -sL "$URL" | tar xz
+
+        # Install
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          mv cargo-copter.exe "$HOME/.cargo/bin/"
+        else
+          chmod +x cargo-copter
+          mkdir -p "$HOME/.cargo/bin"
+          mv cargo-copter "$HOME/.cargo/bin/"
+        fi
+
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        echo "cargo-copter installed successfully"
+
+    - name: Verify installation
+      shell: bash
+      run: cargo-copter --version
+
+    - name: Run cargo-copter
+      id: run
+      shell: bash
+      run: |
+        set -e
+
+        # Build command
+        CMD="cargo-copter"
+
+        # Add path
+        CMD="$CMD --path ${{ inputs.path }}"
+
+        # Add dependents selection
+        if [ -n "${{ inputs.dependents }}" ]; then
+          CMD="$CMD --dependents ${{ inputs.dependents }}"
+        else
+          CMD="$CMD --top-dependents ${{ inputs.top-dependents }}"
+        fi
+
+        # Add version options
+        if [ -n "${{ inputs.test-versions }}" ]; then
+          CMD="$CMD --test-versions ${{ inputs.test-versions }}"
+        fi
+
+        if [ -n "${{ inputs.force-versions }}" ]; then
+          CMD="$CMD --force-versions ${{ inputs.force-versions }}"
+        fi
+
+        # Add flags
+        if [ "${{ inputs.only-check }}" = "true" ]; then
+          CMD="$CMD --only-check"
+        fi
+
+        if [ "${{ inputs.only-fetch }}" = "true" ]; then
+          CMD="$CMD --only-fetch"
+        fi
+
+        CMD="$CMD --error-lines ${{ inputs.error-lines }}"
+
+        echo "Running: $CMD"
+        echo ""
+
+        # Run and capture exit code
+        set +e
+        $CMD
+        EXIT_CODE=$?
+        set -e
+
+        # Parse results from JSON report
+        if [ -f "copter-report/report.json" ]; then
+          PASSED=$(jq -r '.summary.passed // 0' copter-report/report.json)
+          REGRESSED=$(jq -r '.summary.regressed // 0' copter-report/report.json)
+          BROKEN=$(jq -r '.summary.broken // 0' copter-report/report.json)
+
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "regressed=$REGRESSED" >> $GITHUB_OUTPUT
+          echo "broken=$BROKEN" >> $GITHUB_OUTPUT
+          echo "report-path=copter-report/report.json" >> $GITHUB_OUTPUT
+
+          echo ""
+          echo "=== Results ==="
+          echo "Passed:    $PASSED"
+          echo "Regressed: $REGRESSED"
+          echo "Broken:    $BROKEN"
+        else
+          echo "passed=0" >> $GITHUB_OUTPUT
+          echo "regressed=0" >> $GITHUB_OUTPUT
+          echo "broken=0" >> $GITHUB_OUTPUT
+          echo "report-path=" >> $GITHUB_OUTPUT
+        fi
+
+        # Handle exit code
+        if [ "${{ inputs.fail-on-regression }}" = "true" ] && [ "$EXIT_CODE" != "0" ]; then
+          echo ""
+          echo "::error::Regressions detected! See report for details."
+          exit $EXIT_CODE
+        fi
+
+    - name: Upload report artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: copter-report
+        path: copter-report/
+        if-no-files-found: ignore

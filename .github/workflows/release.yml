@@ -10,8 +10,30 @@ permissions:
   contents: write
 
 jobs:
+  verify-version:
+    name: Verify tag matches Cargo.toml
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check version match
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "Tag version: $TAG_VERSION"
+          echo "Cargo.toml version: $CARGO_VERSION"
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Version mismatch! Tag is v$TAG_VERSION but Cargo.toml has $CARGO_VERSION"
+            exit 1
+          fi
+          echo "✓ Versions match"
+
   build-release:
     name: Build Release Artifacts
+    needs: verify-version
+    if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
