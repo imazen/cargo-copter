@@ -2,7 +2,7 @@
 name = "cargo-copter"
 version = "0.1.1"
 authors = ["Lilith River <lilith@imazen.io"]
-description = "Test dependents against your new crate version before you publish it. Inspired by cargo-crusader"
+description = "Test dependents against multiple versions of your crate (or your local WIP before publishing). Inspired by the cargo-crusader"
 license = "MIT/Apache-2.0"
 repository = "https://github.com/imazen/cargo-copter"
 edition = "2024"

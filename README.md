@@ -1,8 +1,15 @@
 # Cargo Copter
 
-> Test downstream impact of Rust crate changes before publishing
+**Test downstream impact of Rust crate changes before publishing. Spot and locate regressions and API breakages.**
+
+Test `any versions of your crate and/or a local WIP version` X `any versions of any specified dependents` (defaults to top 10 most popular dependents).
+
+Let natural version resolution take place `--test-versions "0.8.50 0.8.51"` (to simulate publishing to crates.io)<br/>
+OR use `--force-versions "0.8.52 0.8.53"` to simulate them upgrading to a new version of your crate with an edit of their cargo.toml.
 
 **⚠️ Security**: Executes arbitrary code from crates.io. Always run in sandboxed environments.
+
+Why did you name it cargo-copter? *To make it absolutely **impossible** to find via google.*
 
 ## Quick Start
 
