@@ -8,7 +8,7 @@ license = "MIT/Apache-2.0"
 repository = "https://github.com/imazen/cargo-copter"
 edition = "2024"
 readme = "README.md"
-keywords = ["cargo", "testing", "dependencies", "compatibility", "ci", "cargo-subcommand", "semver", "cargo-crusader"]
+keywords = ["cargo", "testing", "dependencies", "cargo-subcommand", "cargo-crusader"]
 categories = ["development-tools::cargo-plugins", "development-tools::testing", "command-line-utilities"]
 # cargo-binstall configuration
 [package.metadata.binstall]
