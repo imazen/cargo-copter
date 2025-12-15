@@ -37,7 +37,7 @@ cargo test
 ./target/release/cargo-copter --crate rgb --test-versions "0.8.50 0.8.51"
 ```
 
-## Code Formatting
+## Code Formatting & Linting
 
 **Before starting any task:**
 1. Run `cargo fmt --check` to see if formatting is needed
@@ -47,11 +47,13 @@ cargo test
 
 **After every code change:**
 - Run `cargo fmt` immediately after modifying any `.rs` file
-- This keeps the codebase formatted at all times
+- Run `cargo clippy` to check for warnings
+- This keeps the codebase formatted and warning-free at all times
 
 ```bash
 cargo fmt --check  # Check if formatting needed
 cargo fmt          # Apply formatting
+cargo clippy       # Check for warnings
 ```
 
 ## Architecture Overview

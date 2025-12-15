@@ -933,17 +933,17 @@ pub fn write_failure_log(report_dir: &Path, staging_dir: &Path, result: &TestRes
     }
 
     // Write check step output if it failed
-    if let Some(ref check) = result.execution.check {
-        if !check.success {
-            write_step_output(&mut content, check, "CHECK (cargo check)");
-        }
+    if let Some(ref check) = result.execution.check
+        && !check.success
+    {
+        write_step_output(&mut content, check, "CHECK (cargo check)");
     }
 
     // Write test step output if it failed
-    if let Some(ref test) = result.execution.test {
-        if !test.success {
-            write_step_output(&mut content, test, "TEST (cargo test)");
-        }
+    if let Some(ref test) = result.execution.test
+        && !test.success
+    {
+        write_step_output(&mut content, test, "TEST (cargo test)");
     }
 
     // Write to file

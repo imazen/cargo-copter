@@ -89,16 +89,15 @@ fn main() {
     }
     // Append copter-report/ to .gitignore if it exists and doesn't already have it
     let gitignore_path = PathBuf::from(".gitignore");
-    if gitignore_path.exists() {
-        if let Ok(content) = fs::read_to_string(&gitignore_path) {
-            if !content.lines().any(|line| line.trim() == "copter-report" || line.trim() == "copter-report/") {
-                let entry = if content.ends_with('\n') { "copter-report/\n" } else { "\ncopter-report/\n" };
-                let _ = fs::OpenOptions::new().append(true).open(&gitignore_path).and_then(|mut f| {
-                    use std::io::Write;
-                    f.write_all(entry.as_bytes())
-                });
-            }
-        }
+    if gitignore_path.exists()
+        && let Ok(content) = fs::read_to_string(&gitignore_path)
+        && !content.lines().any(|line| line.trim() == "copter-report" || line.trim() == "copter-report/")
+    {
+        let entry = if content.ends_with('\n') { "copter-report/\n" } else { "\ncopter-report/\n" };
+        let _ = fs::OpenOptions::new().append(true).open(&gitignore_path).and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(entry.as_bytes())
+        });
     }
 
     // Build test matrix
@@ -243,7 +242,12 @@ fn print_test_plan(matrix: &TestMatrix, args: &cli::CliArgs) {
 }
 
 /// Generate non-console reports (markdown, JSON) and comparison table
-fn generate_non_console_reports(rows: &[OfferedRow], _args: &cli::CliArgs, matrix: &TestMatrix, report_dir: &PathBuf) {
+fn generate_non_console_reports(
+    rows: &[OfferedRow],
+    _args: &cli::CliArgs,
+    matrix: &TestMatrix,
+    report_dir: &std::path::Path,
+) {
     // Print comparison table
     let comparison_stats = report::generate_comparison_table(rows);
     report::print_comparison_table(&comparison_stats);
