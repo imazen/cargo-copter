@@ -18,7 +18,7 @@
 set -euo pipefail
 
 # Configuration
-IMAGE_NAME="${COPTER_DOCKER_IMAGE:-cargo-copter:local}"
+IMAGE_NAME="${COPTER_DOCKER_IMAGE:-ghcr.io/imazen/cargo-copter:latest}"
 WORKSPACE="$(pwd)"
 COPTER_DIR="${COPTER_DIR:-$WORKSPACE/.copter}"
 CARGO_HOME_CACHE="${COPTER_CARGO_CACHE:-$COPTER_DIR/docker-cargo}"
@@ -50,11 +50,26 @@ check_prerequisites() {
     fi
 }
 
-# Build Docker image if needed
+# Check if we're in development mode (local script exists in current dir)
+is_dev_mode() {
+    [ -f "./copter-docker.sh" ] || [ "${COPTER_DEV_MODE:-}" = "1" ]
+}
+
+# Build or pull Docker image if needed
 build_image() {
     if docker image inspect "$IMAGE_NAME" &>/dev/null; then
         info "Using existing Docker image: $IMAGE_NAME"
         return 0
+    fi
+
+    # For default ghcr.io image in non-dev mode, try to pull first
+    if [[ "$IMAGE_NAME" == ghcr.io/* ]] && ! is_dev_mode; then
+        info "Pulling Docker image: $IMAGE_NAME"
+        if docker pull "$IMAGE_NAME"; then
+            info "Docker image pulled successfully"
+            return 0
+        fi
+        warn "Failed to pull image from registry, building locally instead"
     fi
 
     info "Building Docker image: $IMAGE_NAME (this may take a few minutes)"
@@ -104,19 +119,35 @@ run_copter() {
     echo "  Staging: $COPTER_DIR/staging"
     echo ""
 
-    # Check if user specified --crate or --path in args
+    # Parse --path argument from args
     local user_specified_crate=false
-    local user_specified_path=false
-    for arg in "${args[@]}"; do
-        case "$arg" in
+    local user_specified_path=""
+    local i=0
+    while [ $i -lt ${#args[@]} ]; do
+        case "${args[$i]}" in
             --crate|--crate=*|-c) user_specified_crate=true ;;
-            --path|--path=*|-p) user_specified_path=true ;;
+            --path=*) user_specified_path="${args[$i]#--path=}" ;;
+            -p=*) user_specified_path="${args[$i]#-p=}" ;;
+            --path|-p)
+                if [ $((i+1)) -lt ${#args[@]} ]; then
+                    user_specified_path="${args[$((i+1))]}"
+                fi
+                ;;
         esac
+        i=$((i+1))
     done
+
+    # Resolve the path to absolute
+    local resolved_path=""
+    local container_path=""
+    if [ -n "$user_specified_path" ]; then
+        resolved_path="$(cd "$(dirname "$user_specified_path")" 2>/dev/null && pwd)/$(basename "$user_specified_path")"
+        resolved_path="$(realpath "$user_specified_path" 2>/dev/null || echo "$resolved_path")"
+    fi
 
     # Check if we have a local Cargo.toml and should use it
     local use_local_crate=false
-    if [ -f "$WORKSPACE/Cargo.toml" ] && [ "$user_specified_crate" = false ] && [ "$user_specified_path" = false ]; then
+    if [ -f "$WORKSPACE/Cargo.toml" ] && [ "$user_specified_crate" = false ] && [ -z "$user_specified_path" ]; then
         use_local_crate=true
     fi
 
@@ -142,16 +173,48 @@ run_copter() {
         --security-opt=no-new-privileges
     )
 
-    # Add workspace mount if we're using a local crate
+    # Add workspace mount if we're using a local crate (implicit path)
     if [ "$use_local_crate" = true ]; then
         docker_opts+=(--volume "$WORKSPACE:/workspace:ro")
+        container_path="/workspace"
+    fi
+
+    # Add mount for explicit --path argument
+    if [ -n "$resolved_path" ]; then
+        # Mount the path's parent directory to handle both file and directory paths
+        local mount_dir="$resolved_path"
+        if [ -f "$resolved_path" ]; then
+            mount_dir="$(dirname "$resolved_path")"
+        fi
+        docker_opts+=(--volume "$mount_dir:/external-crate:ro")
+        # Compute container path
+        if [ -f "$resolved_path" ]; then
+            container_path="/external-crate/$(basename "$resolved_path")"
+        else
+            container_path="/external-crate"
+        fi
     fi
 
     # Build the cargo-copter command with appropriate path flag
     local copter_cmd="cargo-copter --staging-dir /copter/staging"
-    if [ "$use_local_crate" = true ]; then
-        copter_cmd="$copter_cmd --path /workspace"
+    if [ -n "$container_path" ]; then
+        copter_cmd="$copter_cmd --path $container_path"
     fi
+
+    # Filter out --path from args since we're handling it ourselves
+    local filtered_args=()
+    local skip_next=false
+    for arg in "${args[@]}"; do
+        if [ "$skip_next" = true ]; then
+            skip_next=false
+            continue
+        fi
+        case "$arg" in
+            --path=*|-p=*) continue ;;
+            --path|-p) skip_next=true; continue ;;
+            *) filtered_args+=("$arg") ;;
+        esac
+    done
 
     # Run cargo-copter (install if needed)
     # Capture exit code - non-zero means regressions were found (which is expected)
@@ -167,19 +230,21 @@ run_copter() {
         fi
 
         echo ''
-        $copter_cmd ${args[*]:-}
+        $copter_cmd ${filtered_args[*]:-}
     " || copter_exit=$?
 
-    # Copy reports from .copter to workspace
+    # Copy reports to workspace
+    # Handle both new directory structure (copter-report/) and old flat files
     echo ""
-    local reports_copied=false
-    for report in copter-report.md copter-report.json; do
-        if [ -f "$COPTER_DIR/$report" ]; then
-            cp "$COPTER_DIR/$report" "$WORKSPACE/" 2>/dev/null && reports_copied=true
-        fi
-    done
-    if [ "$reports_copied" = true ]; then
-        info "Reports copied to: $WORKSPACE/"
+    mkdir -p "$WORKSPACE/copter-report"
+    if [ -d "$COPTER_DIR/copter-report" ]; then
+        cp -r "$COPTER_DIR/copter-report/"* "$WORKSPACE/copter-report/" 2>/dev/null
+        info "Reports copied to: $WORKSPACE/copter-report/"
+    elif [ -f "$COPTER_DIR/copter-report.md" ] || [ -f "$COPTER_DIR/copter-report.json" ]; then
+        # Old flat file structure (pre-0.3 cargo-copter)
+        cp "$COPTER_DIR/copter-report.md" "$WORKSPACE/copter-report/report.md" 2>/dev/null
+        cp "$COPTER_DIR/copter-report.json" "$WORKSPACE/copter-report/report.json" 2>/dev/null
+        info "Reports copied to: $WORKSPACE/copter-report/"
     fi
 
     return $copter_exit
