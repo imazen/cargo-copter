@@ -48,6 +48,7 @@ pub fn build_test_matrix(args: &CliArgs) -> Result<TestMatrix, String> {
         skip_check: args.should_skip_check(),
         skip_test: args.should_skip_test(),
         error_lines: args.error_lines,
+        patch_transitive: args.patch_transitive,
     })
 }
 

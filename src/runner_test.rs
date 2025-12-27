@@ -29,6 +29,7 @@ mod tests {
             skip_check: false,
             skip_test: false,
             error_lines: 10,
+            patch_transitive: false,
         }
     }
 

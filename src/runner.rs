@@ -164,7 +164,8 @@ fn run_single_test_with_spec(
             Some(base_version_str.clone()),
             base_spec.override_mode == OverrideMode::Force,
             original_requirement, // Use provided spec from baseline test (if any)
-        );
+        )
+        .with_patch_transitive(matrix.patch_transitive);
 
     // Prepare override path if needed (download registry versions)
     let override_path = if base_spec.override_mode != OverrideMode::None {

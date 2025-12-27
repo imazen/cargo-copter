@@ -283,6 +283,18 @@ VersionSpec {
 }
 ```
 
+**Transitive patch** (`--patch-transitive`): Adds `[patch.crates-io]` to Cargo.toml
+
+This unifies ALL versions of the base crate across the entire dependency tree,
+resolving "multiple versions of crate X" errors. Can be combined with force mode.
+
+```rust
+TestConfig {
+    patch_transitive: true,  // Adds [patch.crates-io] section
+    // ...
+}
+```
+
 ## Caching
 
 Default cache location (platform-specific user cache directory):
@@ -308,6 +320,7 @@ Contents:
 --error-lines <N>            # Max lines to show per error (default: 10, 0=unlimited)
 --top-dependents <N>         # Test top N dependents by downloads
 --dependents <CRATE>...      # Specific dependents to test (name or name:version)
+--patch-transitive           # Add [patch.crates-io] to unify ALL transitive deps
 ```
 
 **Examples:**
@@ -326,6 +339,9 @@ cargo-copter --clean --top-dependents 5
 
 # Show more error details
 cargo-copter --error-lines 50 --top-dependents 5
+
+# Patch transitive deps (for crates with multi-version conflicts)
+cargo-copter --dependents image gifski --patch-transitive
 ```
 
 ## Common Workflows
