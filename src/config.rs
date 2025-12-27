@@ -40,12 +40,13 @@ pub fn build_test_matrix(args: &CliArgs) -> Result<TestMatrix, String> {
     // Step 4: Ensure baseline versions are resolved for each dependent
     // (This happens during test execution when we need the actual resolved versions)
 
-    // Note about patch_transitive usage (CLI requires --force-versions, so we know it's enabled)
+    // Deprecation warning for --patch-transitive
     if args.patch_transitive {
         eprintln!(
-            "Note: --patch-transitive adds [patch.crates-io] to Cargo.toml.\n\
-             This only affects transitive deps with semver-compatible requirements.\n\
-             Transitive deps with incompatible requirements will still use crates.io versions."
+            "⚠️  DEPRECATED: --patch-transitive is no longer needed.\n\
+             Auto-retry now handles this automatically. When --force-versions\n\
+             encounters a 'multiple versions of crate' error, it automatically\n\
+             retries with [patch.crates-io] applied. Look for the '!!' marker in output.\n"
         );
     }
 

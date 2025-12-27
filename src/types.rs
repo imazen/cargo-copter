@@ -56,8 +56,9 @@ pub struct DependencyRef {
 /// Version offered for testing
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OfferedVersion {
-    pub version: String, // "this(0.8.91)" or "0.8.51"
-    pub forced: bool,    // true shows [≠→!] suffix
+    pub version: String,                         // "this(0.8.91)" or "0.8.51"
+    pub forced: bool,                            // true shows [≠→!] suffix
+    pub patch_depth: crate::compile::PatchDepth, // !, !!, or !!! marker
 }
 
 /// Test execution (Install/Check/Test)

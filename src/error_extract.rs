@@ -185,25 +185,26 @@ pub fn detect_multiple_version_conflicts(output: &str) -> Vec<MultipleVersionsCo
     let mut conflicts = Vec::new();
 
     // Pattern: "note: there are multiple different versions of crate `X` in the dependency graph"
-    let re_main = regex::Regex::new(r"there are multiple different versions of crate `([^`]+)` in the dependency graph").ok();
+    let re_main =
+        regex::Regex::new(r"there are multiple different versions of crate `([^`]+)` in the dependency graph").ok();
     // Pattern: "one version of crate `X` used here, as a dependency of crate `Y`"
-    let re_dep = regex::Regex::new(r"one version of crate `([^`]+)` used here, as a (dependency of crate `([^`]+)`|direct dependency)").ok();
+    let re_dep = regex::Regex::new(
+        r"one version of crate `([^`]+)` used here, as a (dependency of crate `([^`]+)`|direct dependency)",
+    )
+    .ok();
 
     if re_main.is_none() {
         // Fallback: simple string search if regex fails
         if output.contains("there are multiple different versions of crate") {
             // Extract crate name with simple pattern matching
             for line in output.lines() {
-                if line.contains("there are multiple different versions of crate `") {
-                    if let Some(start) = line.find("crate `") {
-                        let rest = &line[start + 7..];
-                        if let Some(end) = rest.find('`') {
-                            let crate_name = rest[..end].to_string();
-                            conflicts.push(MultipleVersionsConflict {
-                                crate_name,
-                                conflicting_deps: Vec::new(),
-                            });
-                        }
+                if line.contains("there are multiple different versions of crate `")
+                    && let Some(start) = line.find("crate `")
+                {
+                    let rest = &line[start + 7..];
+                    if let Some(end) = rest.find('`') {
+                        let crate_name = rest[..end].to_string();
+                        conflicts.push(MultipleVersionsConflict { crate_name, conflicting_deps: Vec::new() });
                     }
                 }
             }
@@ -232,10 +233,7 @@ pub fn detect_multiple_version_conflicts(output: &str) -> Vec<MultipleVersionsCo
                 });
             }
 
-            conflicts.push(MultipleVersionsConflict {
-                crate_name,
-                conflicting_deps,
-            });
+            conflicts.push(MultipleVersionsConflict { crate_name, conflicting_deps });
         }
     }
 

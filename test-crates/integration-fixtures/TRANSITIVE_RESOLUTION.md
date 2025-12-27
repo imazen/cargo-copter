@@ -69,28 +69,29 @@ In cargo-copter output:
 | `!!`   | Patch retry - auto-added [patch.crates-io] after multi-version error |
 | `!!!`  | Deep patch - recursive transitive patching (depth 2+) |
 
-## Auto-Retry Logic (Planned)
+## Auto-Retry Logic (Implemented)
 
-When `--force` is used and check fails with "multiple versions" error:
+When `--force-versions` is used and check fails with "multiple versions" error,
+cargo-copter now automatically:
 
 1. **Detect conflict**: Parse error for "there are multiple different versions of crate"
-2. **Extract deps**: Find which crates are using the wrong version (e.g., `ravif`)
-3. **Apply patch**: Add `[patch.crates-io]` section to unify all transitive deps
-4. **Retry check**: Run cargo check again with patching
-5. **Track depth**: If still fails, identify deeper transitive deps and repeat
+2. **Apply patch**: Restore Cargo.toml, re-apply force override WITH `[patch.crates-io]`
+3. **Retry check**: Run cargo check again with unified patching
+4. **Track depth**: Mark result with `!!` to indicate auto-patching was applied
 
-This auto-retry will:
-- Deprecate the explicit `--patch-transitive` flag
-- Automatically escalate from `!` to `!!` to `!!!` as needed
-- Report the final patching depth in output
+This auto-retry behavior:
+- Makes the explicit `--patch-transitive` flag unnecessary (deprecated, hidden from help)
+- Automatically escalates from `!` to `!!` when multi-version conflict detected
+- Reports the patching depth in output markers
 
 ## Implementation Status
 
 - [x] Conflict detection in error_extract.rs
-- [ ] Auto-retry in compile.rs
-- [ ] Depth tracking in types.rs
-- [ ] Marker display in report.rs
-- [ ] Deprecation of --patch-transitive
+- [x] Auto-retry in compile.rs (run_three_step_ict)
+- [x] Depth tracking in compile.rs (PatchDepth enum, OfferedVersion.patch_depth)
+- [x] Marker display in report.rs (OfferedCell uses patch_depth.marker())
+- [x] Simple output with markers (print_simple_dependent_result)
+- [x] Deprecation of --patch-transitive (hidden from help, shows warning)
 
 ## Resolution Strategy
 
@@ -128,15 +129,83 @@ The conflict:
 
 To resolve: need to patch `ravif` to also use rgb:0.8.91-alpha.3
 
-## Semver Implications
+## Semver Spec Requirements for Adoption
 
-For crates to work with new rgb versions, they need:
+For crates to naturally adopt new versions (without force/patch), their dependency
+specs must be compatible. Here's what different specs allow:
 
-| Current Spec | New Spec Needed | Notes |
-|--------------|-----------------|-------|
-| `=0.8.50`    | `^0.8`          | Allow any 0.8.x |
-| `^0.8.50`    | `^0.8`          | Already compatible |
-| `0.8`        | `>=0.8`         | If supporting 0.9+ |
+### Version Spec Compatibility Matrix
+
+| Spec in Cargo.toml | Allows 0.8.50 | Allows 0.8.91 | Allows 0.9.0 | Notes |
+|--------------------|---------------|---------------|--------------|-------|
+| `=0.8.50`          | ✓             | ✗             | ✗            | Exact version pin - blocks all upgrades |
+| `^0.8.50`          | ✓             | ✓             | ✗            | Caret allows 0.8.x ≥ 0.8.50 |
+| `^0.8`             | ✓             | ✓             | ✗            | Caret allows any 0.8.x |
+| `>=0.8, <0.9`      | ✓             | ✓             | ✗            | Explicit range, same as ^0.8 |
+| `>=0.8`            | ✓             | ✓             | ✓            | Open-ended, allows any ≥0.8 |
+| `*`                | ✓             | ✓             | ✓            | Wildcard, allows any version |
+
+### Recommended Actions by Scenario
+
+#### For Crate Authors (Publishing New Versions)
+
+1. **Breaking change to 0.9.x?**
+   - Dependents with `^0.8` will NOT get 0.9.x automatically
+   - cargo-copter will show these as regressions with `!` marker
+   - Use `--force-versions 0.9.0` to test impact
+
+2. **Semver-compatible patch (0.8.x)?**
+   - Dependents with `^0.8` should naturally upgrade
+   - No force/patch needed for testing
+   - If regressions occur, it's a breaking change disguised as patch
+
+#### For Dependent Crate Maintainers
+
+| Current Spec | Problem | Recommended Change |
+|--------------|---------|-------------------|
+| `=0.8.50`    | Blocks all updates | Use `^0.8.50` unless exact match required |
+| `^0.8.50`    | Good for 0.8.x | Already optimal for patch updates |
+| `>=0.8, <0.9` | Verbose | Simplify to `^0.8` |
+
+#### For Transitive Dependencies
+
+The key insight: **ALL crates in the dependency tree must have compatible specs**
+for natural resolution to work.
+
+```
+app
+├── lib-a (rgb = "^0.8")      ✓ Will accept 0.8.91
+└── lib-b
+    └── lib-c (rgb = "=0.8.50") ✗ Blocks 0.8.91
+```
+
+In this case:
+- `lib-c` must update their spec from `=0.8.50` to `^0.8`
+- Until they do, cargo-copter will show `!!` (auto-patched) results
+- The `!!` marker indicates force + transitive patching was needed
+
+### Spec Compatibility for Alpha/Pre-release Versions
+
+| Base Spec | Alpha Version | Allowed? | Notes |
+|-----------|---------------|----------|-------|
+| `^0.8`    | `0.8.91-alpha.3` | ✓ | Semver pre-release is ≥ than 0.8.0 |
+| `^0.8.50` | `0.8.91-alpha.3` | ✓ | Pre-release of 0.8.91 satisfies ^0.8.50 |
+| `=0.8.50` | `0.8.91-alpha.3` | ✗ | Exact pin rejects everything else |
+
+### How cargo-copter Helps
+
+1. **Baseline test**: Shows what works with naturally resolved versions
+2. **Force test (`!`)**: Shows what WOULD work if specs allowed the version
+3. **Patch retry (`!!`)**: Shows if transitive conflicts can be resolved via patching
+4. **Report**: Identifies which crates in tree are blocking adoption
+
+Example output interpretation:
+```
+OK: image:0.25.9 - passed with rgb:0.8.91-alpha.3 [!!]
+```
+Means: image would work with rgb:0.8.91-alpha.3, but ONLY with force mode and
+transitive patching. To adopt naturally, transitive deps (e.g., ravif) need
+updated specs.
 
 ## Test Fixtures
 

@@ -65,7 +65,8 @@ pub enum OfferedCell {
         icon: StatusIcon,
         resolution: Resolution,
         version: String,
-        forced: bool, // adds →! suffix if true
+        forced: bool,                            // adds →! suffix if true
+        patch_depth: crate::compile::PatchDepth, // !, !!, or !!! marker
     },
 }
 
@@ -104,17 +105,27 @@ impl OfferedCell {
             Resolution::Upgraded // Cargo upgraded to something else
         };
 
-        OfferedCell::Tested { icon, resolution, version: offered.version.clone(), forced: offered.forced }
+        OfferedCell::Tested {
+            icon,
+            resolution,
+            version: offered.version.clone(),
+            forced: offered.forced,
+            patch_depth: offered.patch_depth,
+        }
     }
 
     /// Format the cell content for display
     pub fn format(&self) -> String {
         match self {
             OfferedCell::Baseline => "- baseline".to_string(),
-            OfferedCell::Tested { icon, resolution, version, forced } => {
+            OfferedCell::Tested { icon, resolution, version, patch_depth, .. } => {
+                // Use the patch_depth marker instead of simple "→!" suffix
+                // Markers: ! (force), !! (patch), !!! (deep patch)
+                let marker = patch_depth.marker();
                 let mut result = format!("{} {}{}", icon.as_str(), resolution.as_str(), version);
-                if *forced {
-                    result.push_str("→!");
+                if !marker.is_empty() {
+                    result.push('→');
+                    result.push_str(marker);
                 }
                 result
             }
@@ -999,17 +1010,11 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
         .unwrap_or(false);
 
     // Determine baseline test status (separate from build)
-    let baseline_test_passed = baseline_row
-        .map(|r| r.test.commands.iter().all(|c| c.result.passed))
-        .unwrap_or(false);
+    let baseline_test_passed = baseline_row.map(|r| r.test.commands.iter().all(|c| c.result.passed)).unwrap_or(false);
 
     // Get baseline version info for reporting
-    let baseline_version = baseline_row
-        .map(|r| r.primary.resolved_version.as_str())
-        .unwrap_or("?");
-    let baseline_spec = baseline_row
-        .map(|r| r.primary.spec.as_str())
-        .unwrap_or("?");
+    let baseline_version = baseline_row.map(|r| r.primary.resolved_version.as_str()).unwrap_or("?");
+    let baseline_spec = baseline_row.map(|r| r.primary.spec.as_str()).unwrap_or("?");
 
     // Analyze all offered versions
     let mut build_regressions: Vec<(&OfferedRow, &'static str)> = Vec::new();
@@ -1019,9 +1024,10 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
 
     for row in &results.offered_versions {
         let version = row.offered.as_ref().map(|o| o.version.as_str()).unwrap_or("?");
-        let forced = row.offered.as_ref().map(|o| o.forced).unwrap_or(false);
-        let version_display = if forced {
-            format!("{}:{} [forced]", base_crate, version)
+        let patch_depth = row.offered.as_ref().map(|o| o.patch_depth).unwrap_or_default();
+        let marker = patch_depth.marker();
+        let version_display = if !marker.is_empty() {
+            format!("{}:{} [{}]", base_crate, version, marker)
         } else {
             format!("{}:{}", base_crate, version)
         };
@@ -1054,8 +1060,9 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
     if !build_regressions.is_empty() {
         for (row, step) in &build_regressions {
             let version = row.offered.as_ref().map(|o| o.version.as_str()).unwrap_or("?");
-            let forced = row.offered.as_ref().map(|o| o.forced).unwrap_or(false);
-            let forced_marker = if forced { " [forced]" } else { "" };
+            let patch_depth = row.offered.as_ref().map(|o| o.patch_depth).unwrap_or_default();
+            let marker = patch_depth.marker();
+            let depth_marker = if !marker.is_empty() { format!(" [{}]", marker) } else { String::new() };
 
             let baseline_info = format!("{}:{} ({})", base_crate, baseline_version, baseline_spec);
             let baseline_note = if baseline_test_passed {
@@ -1066,7 +1073,7 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
 
             println!(
                 "REGRESSION: {} with {}:{}{} - {} failed ({})",
-                dep, base_crate, version, forced_marker, step, baseline_note
+                dep, base_crate, version, depth_marker, step, baseline_note
             );
             // Print first error line
             if let Some(error) = first_error_line(row) {
@@ -1079,13 +1086,14 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
     if !test_regressions.is_empty() {
         for row in &test_regressions {
             let version = row.offered.as_ref().map(|o| o.version.as_str()).unwrap_or("?");
-            let forced = row.offered.as_ref().map(|o| o.forced).unwrap_or(false);
-            let forced_marker = if forced { " [forced]" } else { "" };
+            let patch_depth = row.offered.as_ref().map(|o| o.patch_depth).unwrap_or_default();
+            let marker = patch_depth.marker();
+            let depth_marker = if !marker.is_empty() { format!(" [{}]", marker) } else { String::new() };
 
             let baseline_info = format!("{}:{} ({})", base_crate, baseline_version, baseline_spec);
             println!(
                 "REGRESSION: {} with {}:{}{} - tests failed (baseline {} passed)",
-                dep, base_crate, version, forced_marker, baseline_info
+                dep, base_crate, version, depth_marker, baseline_info
             );
             // Print first error line
             if let Some(error) = first_error_line(row) {
@@ -1148,11 +1156,8 @@ fn first_error_line(row: &OfferedRow) -> Option<String> {
                     // Fallback: first non-empty line
                     if let Some(first) = failure.error_message.lines().find(|l| !l.trim().is_empty()) {
                         let trimmed = first.trim();
-                        let display = if trimmed.len() > 100 {
-                            format!("{}...", &trimmed[..100])
-                        } else {
-                            trimmed.to_string()
-                        };
+                        let display =
+                            if trimmed.len() > 100 { format!("{}...", &trimmed[..100]) } else { trimmed.to_string() };
                         return Some(display);
                     }
                 }

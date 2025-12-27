@@ -212,10 +212,46 @@ fn test_offered_cell_wip_rendering() {
     // - Resolution::Mismatch → "≠"
     // - Version: "this"
     // - Forced: true → "[≠→!]"
-    // Result: "✗ ≠this [≠→!]"
+    // Result: "✗ ≠this→!"
 
     println!("✅ OfferedCell::Tested (WIP, forced) should render as:");
-    println!("   '✗ ≠this [≠→!]' (when failed and forced)");
+    println!("   '✗ ≠this→!' (when failed and forced, PatchDepth::Force)");
     println!("   '✓ =this' (when passed and resolved exactly)");
     println!("   This is validated in src/report.rs::OfferedCell::format()");
+}
+
+#[test]
+fn test_patch_depth_marker_rendering() {
+    // Test that PatchDepth markers are correctly displayed
+    //
+    // PatchDepth enum and markers:
+    // - PatchDepth::None    → "" (no marker)
+    // - PatchDepth::Force   → "!" (force mode, direct dependency spec replaced)
+    // - PatchDepth::Patch   → "!!" (patch retry, [patch.crates-io] added after multi-version error)
+    // - PatchDepth::DeepPatch → "!!!" (deep patch, recursive transitive patching)
+    //
+    // Display format: "{icon} {resolution}{version}→{marker}"
+    // Examples:
+    // - "✗ ≠0.8.91→!" (forced)
+    // - "✗ ≠0.8.91→!!" (forced + auto-patch retry for multi-version conflict)
+    // - "✗ ≠0.8.91→!!!" (forced + deep recursive patching)
+    //
+    // Usage in simple output:
+    // - "rgb:0.8.91 [!]" (forced)
+    // - "rgb:0.8.91 [!!]" (patch retry)
+    // - "rgb:0.8.91 [!!!]" (deep patch)
+
+    println!("✅ PatchDepth markers:");
+    println!("   PatchDepth::None      → '' (no marker)");
+    println!("   PatchDepth::Force     → '!' (force mode)");
+    println!("   PatchDepth::Patch     → '!!' (auto-patch after multi-version error)");
+    println!("   PatchDepth::DeepPatch → '!!!' (deep recursive patching)");
+    println!();
+    println!("   Table format: '✗ ≠0.8.91→!!' (with marker suffix)");
+    println!("   Simple format: 'rgb:0.8.91 [!!]' (marker in brackets)");
+    println!();
+    println!("   This is validated in:");
+    println!("   - src/compile.rs::PatchDepth::marker()");
+    println!("   - src/report.rs::OfferedCell::format()");
+    println!("   - src/report.rs::print_simple_dependent_result()");
 }

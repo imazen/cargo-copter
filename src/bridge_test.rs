@@ -2,7 +2,7 @@
 #[cfg(test)]
 mod tests {
     use crate::bridge::test_result_to_offered_row;
-    use crate::compile::{CompileResult, CompileStep, ThreeStepResult};
+    use crate::compile::{CompileResult, CompileStep, PatchDepth, ThreeStepResult};
     use crate::types::*;
     use std::time::Duration;
 
@@ -70,6 +70,7 @@ mod tests {
                 forced_version: false,
                 original_requirement: Some(req.to_string()),
                 all_crate_versions: vec![],
+                patch_depth: PatchDepth::None,
             },
             baseline: None, // This IS the baseline
         }
@@ -95,6 +96,7 @@ mod tests {
                 forced_version: false,
                 original_requirement: None, // No requirement provided
                 all_crate_versions: vec![],
+                patch_depth: PatchDepth::None,
             },
             baseline: None,
         }
@@ -120,6 +122,7 @@ mod tests {
                 forced_version: false,
                 original_requirement: Some("^0.8.0".to_string()),
                 all_crate_versions: vec![],
+                patch_depth: PatchDepth::None,
             },
             baseline: None, // No baseline comparison = this IS the baseline
         }
@@ -145,6 +148,7 @@ mod tests {
                 forced_version: false,
                 original_requirement: Some("^0.8.0".to_string()),
                 all_crate_versions: vec![],
+                patch_depth: PatchDepth::None,
             },
             baseline: Some(BaselineComparison {
                 baseline_passed: true,
