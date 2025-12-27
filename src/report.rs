@@ -1036,10 +1036,15 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
             let forced = row.offered.as_ref().map(|o| o.forced).unwrap_or(false);
             let forced_marker = if forced { " [forced]" } else { "" };
 
-            println!(
-                "REGRESSION: {} with {}{} - baseline check passed but {} failed",
-                dep, version_display, forced_marker, step
-            );
+            // Construct clear regression message
+            let reason = if baseline_passed {
+                format!("{} failed (baseline passed)", step)
+            } else {
+                // Step-level regression: baseline check passed but offered failed earlier
+                format!("{} failed (baseline {} passed)", step, step)
+            };
+
+            println!("REGRESSION: {} with {}{} - {}", dep, version_display, forced_marker, reason);
         }
     } else if !baseline_passed {
         // Baseline failed
@@ -1053,14 +1058,14 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
     }
 }
 
-/// Get the name of the first failed step
+/// Get a human-readable description of the first failed step
 fn failed_step_name(row: &OfferedRow) -> &'static str {
     for cmd in &row.test.commands {
         if !cmd.result.passed {
             return match cmd.command {
                 CommandType::Fetch => "fetch",
-                CommandType::Check => "check",
-                CommandType::Test => "test",
+                CommandType::Check => "build",
+                CommandType::Test => "test suite",
             };
         }
     }
