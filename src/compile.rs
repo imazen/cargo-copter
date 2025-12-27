@@ -863,9 +863,20 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         patch_transitive,
     } = config;
     debug!(
-        "running three-step ICT for {:?} (force={}, expected_version={:?}, patch_transitive={})",
-        crate_path, force_versions, expected_version, patch_transitive
+        "running three-step ICT for {:?} (force={}, expected_version={:?}, patch_transitive={}, has_override_path={})",
+        crate_path,
+        force_versions,
+        expected_version,
+        patch_transitive,
+        override_path.is_some()
     );
+
+    // Sanity check: baseline should NOT have an override_path
+    if override_path.is_some() && !force_versions {
+        debug!("PATCH MODE: will use --config for patching (override_path={:?})", override_path);
+    } else if override_path.is_none() {
+        debug!("BASELINE MODE: no override, testing natural resolution");
+    }
 
     // Always restore Cargo.toml from original backup to prevent contamination
     restore_cargo_toml(crate_path)?;
@@ -879,11 +890,13 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
 
     // Setup: Choose patching strategy based on mode
     // For FORCE mode: Modify Cargo.toml to bypass semver (direct dependency)
-    // For PATCH_TRANSITIVE mode: Add [patch.crates-io] section to patch ALL transitive deps
-    // For PATCH mode: Use --config flag (only patches direct dep)
+    //   - If patch_transitive is also enabled, add [patch.crates-io] for transitive deps
+    // For PATCH mode (non-force): Use --config flag (clean, no file modifications)
+    // For BASELINE: No override at all
     //
-    // IMPORTANT: When both force AND patch_transitive are enabled,
-    // we apply BOTH: force for direct dep + [patch.crates-io] for transitive deps
+    // IMPORTANT: patch_transitive ONLY applies with force mode, because:
+    // 1. Baseline should never be modified
+    // 2. Non-forced versions use --config which doesn't modify files
     let override_path_buf = if let Some(override_path) = override_path {
         if force_versions {
             // FORCE MODE: Must modify Cargo.toml to bypass semver
@@ -898,13 +911,6 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                 debug!("Applied BOTH force override AND [patch.crates-io] for transitive patching");
             }
 
-            None // Don't use --config when we modified Cargo.toml
-        } else if patch_transitive {
-            // PATCH_TRANSITIVE MODE (without force): Add [patch.crates-io] section to Cargo.toml
-            // This unifies ALL versions of the crate across the entire dependency tree
-            apply_patch_crates_io(crate_path, base_crate_name, override_path)?;
-
-            debug!("Applied [patch.crates-io] for transitive patching");
             None // Don't use --config when we modified Cargo.toml
         } else {
             // PATCH MODE: Use --config flag (clean, no file modifications)

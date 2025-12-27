@@ -93,13 +93,23 @@ pub struct CliArgs {
     #[arg(long)]
     pub docker: bool,
 
-    /// Patch ALL transitive dependencies to use the test version
-    /// Uses [patch.crates-io] in the dependent's Cargo.toml to unify all versions
-    /// of the base crate across the entire dependency tree.
-    /// This resolves "multiple versions of crate X" errors when dependents have
-    /// transitive dependencies that also use the base crate.
-    #[arg(long)]
+    /// Patch transitive dependencies when using --force-versions
+    ///
+    /// Adds [patch.crates-io] to the dependent's Cargo.toml to unify versions
+    /// across the dependency tree. Only effective with --force-versions because:
+    /// - Non-forced tests already use transitive patching via --config
+    /// - [patch.crates-io] only affects semver-compatible transitive deps
+    ///
+    /// Use when: forcing a version that's semver-compatible with transitive deps
+    /// but incompatible with the direct dep (e.g., exact version pins).
+    #[arg(long, requires = "force_versions")]
     pub patch_transitive: bool,
+
+    /// Use simple, verbal output format instead of table
+    /// Better for AI parsing and large dependency counts.
+    /// Shows clear PASS/FAIL/REGRESSION status for each test.
+    #[arg(long)]
+    pub simple: bool,
 }
 
 impl CliArgs {
@@ -187,6 +197,7 @@ mod tests {
             console_width: None,
             docker: false,
             patch_transitive: false,
+            simple: false,
         };
         assert!(args.validate().is_err());
     }
@@ -215,6 +226,7 @@ mod tests {
             console_width: None,
             docker: false,
             patch_transitive: false,
+            simple: false,
         };
         let result = args.validate();
         std::fs::remove_file("./Cargo.toml.test").ok();

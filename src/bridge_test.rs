@@ -146,7 +146,13 @@ mod tests {
                 original_requirement: Some("^0.8.0".to_string()),
                 all_crate_versions: vec![],
             },
-            baseline: Some(BaselineComparison { baseline_passed: true, baseline_version: "0.8.50".to_string() }),
+            baseline: Some(BaselineComparison {
+                baseline_passed: true,
+                baseline_version: "0.8.50".to_string(),
+                baseline_fetch_passed: true,
+                baseline_check_passed: None,
+                baseline_test_passed: None,
+            }),
         }
     }
 }

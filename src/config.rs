@@ -40,6 +40,15 @@ pub fn build_test_matrix(args: &CliArgs) -> Result<TestMatrix, String> {
     // Step 4: Ensure baseline versions are resolved for each dependent
     // (This happens during test execution when we need the actual resolved versions)
 
+    // Note about patch_transitive usage (CLI requires --force-versions, so we know it's enabled)
+    if args.patch_transitive {
+        eprintln!(
+            "Note: --patch-transitive adds [patch.crates-io] to Cargo.toml.\n\
+             This only affects transitive deps with semver-compatible requirements.\n\
+             Transitive deps with incompatible requirements will still use crates.io versions."
+        );
+    }
+
     Ok(TestMatrix {
         base_crate: base_crate_name,
         base_versions,
@@ -240,13 +249,14 @@ fn resolve_base_versions(
         return Err("No versions to test".to_string());
     }
 
-    // Ensure exactly one baseline is marked
+    // Ensure exactly one baseline is marked with OverrideMode::None
     // (In default mode, baseline is already set. In multi-version mode, mark first)
     let baseline_count = versions.iter().filter(|v| v.is_baseline).count();
     if baseline_count == 0
         && let Some(first) = versions.first_mut()
     {
         first.is_baseline = true;
+        first.override_mode = OverrideMode::None; // CRITICAL: baseline must have no override!
     }
 
     Ok(versions)

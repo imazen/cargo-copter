@@ -27,6 +27,7 @@ mod tests {
             console_width: None,
             docker: false,
             patch_transitive: false,
+            simple: false,
         };
 
         let matrix = build_test_matrix(&args).expect("Should build matrix");
@@ -65,6 +66,7 @@ mod tests {
             console_width: None,
             docker: false,
             patch_transitive: false,
+            simple: false,
         };
 
         let matrix = build_test_matrix(&args).expect("Should build matrix");
@@ -97,6 +99,7 @@ mod tests {
             console_width: None,
             docker: false,
             patch_transitive: false,
+            simple: false,
         };
 
         let matrix = build_test_matrix(&args).expect("Should build matrix");
@@ -128,6 +131,7 @@ mod tests {
             console_width: None,
             docker: false,
             patch_transitive: false,
+            simple: false,
         };
 
         let matrix = build_test_matrix(&args).expect("Should build matrix");
@@ -163,6 +167,7 @@ mod tests {
             console_width: None,
             docker: false,
             patch_transitive: false,
+            simple: false,
         };
 
         let matrix = build_test_matrix(&args).expect("Should build matrix");
@@ -172,7 +177,7 @@ mod tests {
 
         // First should be baseline with no override
         assert!(matrix.base_versions[0].is_baseline, "First version should be baseline");
-        assert_eq!(matrix.base_versions[0].override_mode, OverrideMode::Patch, "Baseline should use Patch mode");
+        assert_eq!(matrix.base_versions[0].override_mode, OverrideMode::None, "Baseline should have no override");
 
         // Others should not be baseline
         for v in matrix.base_versions.iter().skip(1) {

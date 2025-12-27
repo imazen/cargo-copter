@@ -125,7 +125,13 @@ mod tests {
                 original_requirement: None,
                 all_crate_versions: vec![],
             },
-            baseline: Some(BaselineComparison { baseline_passed: true, baseline_version: "0.1.0".to_string() }),
+            baseline: Some(BaselineComparison {
+                baseline_passed: true,
+                baseline_version: "0.1.0".to_string(),
+                baseline_fetch_passed: true,
+                baseline_check_passed: None,
+                baseline_test_passed: None,
+            }),
         };
 
         assert!(!result.is_baseline(), "Result with baseline comparison should not be baseline");
@@ -157,6 +163,9 @@ mod tests {
             baseline: Some(BaselineComparison {
                 baseline_passed: true, // Baseline passed
                 baseline_version: "0.1.0".to_string(),
+                baseline_fetch_passed: true,
+                baseline_check_passed: None,
+                baseline_test_passed: None,
             }),
         };
 
@@ -165,6 +174,9 @@ mod tests {
             TestStatus::Regressed,
             "Should return Regressed status when baseline passed but current failed"
         );
+
+        // Also verify step-level regression detection
+        assert!(result.is_step_regression(), "Should detect fetch-level regression");
     }
 
     #[test]
@@ -173,5 +185,53 @@ mod tests {
 
         let expected_count = matrix.base_versions.len() * matrix.dependents.len();
         assert_eq!(matrix.test_count(), expected_count, "test_count should return correct number");
+    }
+
+    #[test]
+    fn test_step_regression_check_level() {
+        // Scenario: baseline passes check but fails test, offered fails check
+        // This SHOULD be detected as a regression at the check level
+        let result = TestResult {
+            base_version: VersionedCrate::from_registry("test-crate", "0.2.0"),
+            dependent: VersionedCrate::from_registry("dep1", "1.0.0"),
+            execution: crate::compile::ThreeStepResult {
+                fetch: crate::compile::CompileResult {
+                    step: crate::compile::CompileStep::Fetch,
+                    success: true,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    duration: std::time::Duration::from_secs(1),
+                    diagnostics: vec![],
+                },
+                check: Some(crate::compile::CompileResult {
+                    step: crate::compile::CompileStep::Check,
+                    success: false, // Offered version fails check
+                    stdout: String::new(),
+                    stderr: "error[E0412]: cannot find type".to_string(),
+                    duration: std::time::Duration::from_secs(1),
+                    diagnostics: vec![],
+                }),
+                test: None,
+                actual_version: Some("0.2.0".to_string()),
+                expected_version: Some("0.2.0".to_string()),
+                forced_version: false,
+                original_requirement: None,
+                all_crate_versions: vec![],
+            },
+            baseline: Some(BaselineComparison {
+                baseline_passed: false, // Overall baseline failed (test failed)
+                baseline_version: "0.1.0".to_string(),
+                baseline_fetch_passed: true,
+                baseline_check_passed: Some(true), // But check passed!
+                baseline_test_passed: Some(false), // Test failed
+            }),
+        };
+
+        // This is NOT a traditional regression (baseline_passed=false)
+        assert_eq!(result.status(), TestStatus::StillBroken);
+
+        // But it IS a step-level regression at the check level
+        assert!(result.is_step_regression(), "Should detect check-level regression even when baseline test failed");
+        assert_eq!(result.regression_step(), Some("check"));
     }
 }

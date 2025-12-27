@@ -109,25 +109,39 @@ fn main() {
         }
     };
 
-    // Initialize table widths for console output
+    // Initialize table widths for console output (only needed for table format)
     let version_strs: Vec<String> = matrix.base_versions.iter().map(|v| v.crate_ref.version.display()).collect();
     let display_version = version_strs.first().map(|s| s.as_str()).unwrap_or("unknown");
     let force_versions = matrix.base_versions.iter().any(|v| v.override_mode == OverrideMode::Force);
-    report::init_table_widths(&version_strs, display_version, force_versions);
 
-    // Print test plan and table header before streaming results
-    let test_plan = format_test_plan_string(&matrix);
-    let this_path = matrix.base_versions.iter().find_map(|v| match &v.crate_ref.source {
-        CrateSource::Local { path } => Some(path.display().to_string()),
-        _ => None,
-    });
-    report::print_table_header(
-        &matrix.base_crate,
-        display_version,
-        matrix.dependents.len(),
-        Some(&test_plan),
-        this_path.as_deref(),
-    );
+    let simple_mode = args.simple;
+    let base_crate = matrix.base_crate.clone();
+
+    if simple_mode {
+        // Simple output header with list of all dependents
+        let dependent_names: Vec<String> = matrix
+            .dependents
+            .iter()
+            .map(|d| format!("{}:{}", d.crate_ref.name, d.crate_ref.version.display()))
+            .collect();
+        report::print_simple_header(&matrix.base_crate, display_version, &dependent_names, &version_strs);
+    } else {
+        // Table output initialization and header
+        report::init_table_widths(&version_strs, display_version, force_versions);
+
+        let test_plan = format_test_plan_string(&matrix);
+        let this_path = matrix.base_versions.iter().find_map(|v| match &v.crate_ref.source {
+            CrateSource::Local { path } => Some(path.display().to_string()),
+            _ => None,
+        });
+        report::print_table_header(
+            &matrix.base_crate,
+            display_version,
+            matrix.dependents.len(),
+            Some(&test_plan),
+            this_path.as_deref(),
+        );
+    }
 
     // Run tests with streaming output
     let mut offered_rows = Vec::new();
@@ -136,23 +150,54 @@ fn main() {
     let report_dir_clone = report_dir.clone();
     let staging_dir = matrix.staging_dir.clone();
 
+    // For simple mode: buffer results per dependent
+    let mut current_dependent_results = report::DependentResults::default();
+
     let _test_results = match runner::run_tests(matrix.clone(), |result| {
         // Convert to OfferedRow immediately
         let row = bridge::test_result_to_offered_row(result);
 
-        // Print separator between different dependents
-        if let Some(ref prev) = prev_dependent
-            && *prev != row.primary.dependent_name
-        {
-            report::print_separator_line();
+        if simple_mode {
+            // Simple output mode - buffer results until all versions for dependent are tested
+            // Check if we've moved to a new dependent
+            if current_dependent_results.dependent_name != row.primary.dependent_name
+                || current_dependent_results.dependent_version != row.primary.dependent_version
+            {
+                // Print previous dependent's results if any
+                if !current_dependent_results.dependent_name.is_empty() {
+                    report::print_simple_dependent_result(&current_dependent_results, &base_crate, &report_dir_clone);
+                }
+                // Start new dependent
+                current_dependent_results = report::DependentResults {
+                    dependent_name: row.primary.dependent_name.clone(),
+                    dependent_version: row.primary.dependent_version.clone(),
+                    baseline: None,
+                    offered_versions: Vec::new(),
+                };
+            }
+
+            // Add to current dependent's results
+            if row.offered.is_none() {
+                current_dependent_results.baseline = Some(row.clone());
+            } else {
+                current_dependent_results.offered_versions.push(row.clone());
+            }
+        } else {
+            // Table output mode
+            // Print separator between different dependents
+            if let Some(ref prev) = prev_dependent
+                && *prev != row.primary.dependent_name
+            {
+                report::print_separator_line();
+            }
+
+            // Determine if this is the last row for this dependent
+            // (We can't know this in streaming mode, so always pass false)
+            let is_last = false;
+
+            // Print the row immediately
+            report::print_offered_row(&row, is_last, prev_error.as_deref(), args.error_lines);
         }
-
-        // Determine if this is the last row for this dependent
-        // (We can't know this in streaming mode, so always pass false)
-        let is_last = false;
-
-        // Print the row immediately
-        report::print_offered_row(&row, is_last, prev_error.as_deref(), args.error_lines);
 
         // Write failure log for failed tests
         if !result.execution.is_success() {
@@ -173,11 +218,24 @@ fn main() {
         }
     };
 
-    // Print table footer after all rows
-    report::print_table_footer();
+    // Print final dependent's results in simple mode
+    if simple_mode && !current_dependent_results.dependent_name.is_empty() {
+        report::print_simple_dependent_result(&current_dependent_results, &base_crate, &report_dir);
+    }
 
-    // Generate non-console reports (markdown, JSON)
-    generate_non_console_reports(&offered_rows, &args, &matrix, &report_dir);
+    // Write combined log file (for simple mode, also useful for table mode)
+    let combined_log_path = report::write_combined_log(&report_dir, &offered_rows, &base_crate);
+
+    if simple_mode {
+        // Simple mode: print simple summary with regressions listed
+        report::print_simple_summary(&offered_rows, &report_dir, &base_crate, &combined_log_path);
+    } else {
+        // Table mode: print table footer
+        report::print_table_footer();
+    }
+
+    // Generate non-console reports (markdown, JSON) - always do this
+    generate_non_console_reports(&offered_rows, &args, &matrix, &report_dir, simple_mode);
 
     // If using top-dependents and there were failures, suggest a targeted re-test
     if args.dependents.is_empty() && args.dependent_paths.is_empty() {
@@ -247,10 +305,13 @@ fn generate_non_console_reports(
     _args: &cli::CliArgs,
     matrix: &TestMatrix,
     report_dir: &std::path::Path,
+    simple_mode: bool,
 ) {
-    // Print comparison table
-    let comparison_stats = report::generate_comparison_table(rows);
-    report::print_comparison_table(&comparison_stats);
+    if !simple_mode {
+        // Print comparison table (only for table mode - simple mode has its own summary)
+        let comparison_stats = report::generate_comparison_table(rows);
+        report::print_comparison_table(&comparison_stats);
+    }
 
     // Export markdown report
     let markdown_path = report_dir.join("report.md");
@@ -260,7 +321,7 @@ fn generate_non_console_reports(
         _ => None,
     });
 
-    match report::export_markdown_table_report(
+    if let Err(e) = report::export_markdown_table_report(
         rows,
         &markdown_path,
         &matrix.base_crate,
@@ -269,30 +330,34 @@ fn generate_non_console_reports(
         Some(&test_plan),
         this_path.as_deref(),
     ) {
-        Ok(_) => println!("\nMarkdown report saved to: {}", markdown_path.display()),
-        Err(e) => eprintln!("Warning: Failed to save markdown report: {}", e),
+        eprintln!("Warning: Failed to save markdown report: {}", e);
     }
 
     // Export JSON report
     let json_path = report_dir.join("report.json");
-    match report::export_json_report(
+    if let Err(e) = report::export_json_report(
         rows,
         &json_path,
         &matrix.base_crate,
         &matrix.base_versions.first().map(|v| v.crate_ref.version.display()).unwrap_or_else(|| "unknown".to_string()),
         matrix.dependents.len(),
     ) {
-        Ok(_) => println!("JSON report saved to: {}", json_path.display()),
-        Err(e) => eprintln!("Warning: Failed to save JSON report: {}", e),
+        eprintln!("Warning: Failed to save JSON report: {}", e);
     }
 
-    // Print summary
-    let summary = report::summarize_offered_rows(rows);
-    println!("\n=== Summary ===");
-    println!("✓ Passed:    {}", summary.passed);
-    println!("✗ Regressed: {}", summary.regressed);
-    println!("⚠ Broken:    {}", summary.broken);
-    println!("Total:       {}", summary.total);
+    if !simple_mode {
+        // Print summary (only for table mode - simple mode has its own summary)
+        let summary = report::summarize_offered_rows(rows);
+        println!("\n=== Summary ===");
+        println!("✓ Passed:    {}", summary.passed);
+        println!("✗ Regressed: {}", summary.regressed);
+        println!("⚠ Broken:    {}", summary.broken);
+        println!("Total:       {}", summary.total);
+
+        // Print report paths
+        println!("\nMarkdown report saved to: {}", markdown_path.display());
+        println!("JSON report saved to: {}", json_path.display());
+    }
 }
 
 /// Format test plan as a string

@@ -958,3 +958,274 @@ pub fn write_failure_log(report_dir: &Path, staging_dir: &Path, result: &TestRes
         }
     }
 }
+
+//
+// Simple output format (AI-friendly, verbal)
+//
+
+/// Buffered results for one dependent (all versions tested)
+#[derive(Default)]
+pub struct DependentResults {
+    pub dependent_name: String,
+    pub dependent_version: String,
+    pub baseline: Option<OfferedRow>,
+    pub offered_versions: Vec<OfferedRow>,
+}
+
+/// Print simple header for test run with list of all dependents
+pub fn print_simple_header(base_crate: &str, display_version: &str, dependents: &[String], base_versions: &[String]) {
+    println!("Testing {}:{} against {} dependents", base_crate, display_version, dependents.len());
+    println!();
+    println!("Dependents: {}", dependents.join(", "));
+    println!("Versions to test: {}", base_versions.join(", "));
+    println!();
+}
+
+/// Collect results for a dependent and print when complete
+pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &str, report_dir: &Path) {
+    let dep = format!("{}:{}", results.dependent_name, results.dependent_version);
+
+    // Get baseline status
+    let baseline_row = results.baseline.as_ref();
+    let baseline_passed = baseline_row.map(|r| r.test_passed()).unwrap_or(false);
+    let baseline_check_passed = baseline_row
+        .map(|r| {
+            r.test
+                .commands
+                .iter()
+                .filter(|c| c.command == CommandType::Check || c.command == CommandType::Fetch)
+                .all(|c| c.result.passed)
+        })
+        .unwrap_or(false);
+
+    // Analyze all offered versions
+    let mut all_passed = true;
+    let mut regressions: Vec<(&OfferedRow, &'static str)> = Vec::new();
+    let mut passed_versions: Vec<String> = Vec::new();
+
+    for row in &results.offered_versions {
+        let version = row.offered.as_ref().map(|o| o.version.as_str()).unwrap_or("?");
+        let version_display = format!("{}:{}", base_crate, version);
+        let this_passed = row.test_passed();
+
+        if this_passed {
+            passed_versions.push(version_display);
+        } else {
+            all_passed = false;
+            // Check for step-level regression
+            let failed_step = failed_step_name(row);
+            // Traditional regression: baseline passed, offered failed
+            // Check-level regression: baseline check passed, offered check/fetch failed
+            let is_regression = baseline_passed || (baseline_check_passed && failed_step != "test");
+
+            if is_regression {
+                regressions.push((row, failed_step));
+            }
+        }
+    }
+
+    // Output the result
+    if all_passed && !results.offered_versions.is_empty() {
+        // All versions passed
+        println!("OK: {} - all versions passed ({})", dep, passed_versions.join(", "));
+    } else if !regressions.is_empty() {
+        // At least one regression
+        for (row, step) in &regressions {
+            let version = row.offered.as_ref().map(|o| o.version.as_str()).unwrap_or("?");
+            let version_display = format!("{}:{}", base_crate, version);
+            let forced = row.offered.as_ref().map(|o| o.forced).unwrap_or(false);
+            let forced_marker = if forced { " [forced]" } else { "" };
+
+            println!(
+                "REGRESSION: {} with {}{} - baseline check passed but {} failed",
+                dep, version_display, forced_marker, step
+            );
+        }
+    } else if !baseline_passed {
+        // Baseline failed
+        let step = baseline_row.map(failed_step_name).unwrap_or("unknown");
+        println!("BASELINE FAILED: {} (failed at {})", dep, step);
+    } else if results.offered_versions.is_empty() {
+        // No offered versions (baseline only)
+        if baseline_passed {
+            println!("OK: {} - baseline passed", dep);
+        }
+    }
+}
+
+/// Get the name of the first failed step
+fn failed_step_name(row: &OfferedRow) -> &'static str {
+    for cmd in &row.test.commands {
+        if !cmd.result.passed {
+            return match cmd.command {
+                CommandType::Fetch => "fetch",
+                CommandType::Check => "check",
+                CommandType::Test => "test",
+            };
+        }
+    }
+    "unknown"
+}
+
+/// Write combined log file with all failures
+pub fn write_combined_log(report_dir: &Path, rows: &[OfferedRow], base_crate: &str) -> PathBuf {
+    let log_path = report_dir.join("failures.log");
+
+    let mut content = String::new();
+    content.push_str("# Cargo Copter - Combined Failure Log\n");
+    content.push_str(&format!("# Generated: {}\n", chrono::Local::now().format("%Y-%m-%d %H:%M:%S")));
+    content.push_str(&format!("# Base crate: {}\n\n", base_crate));
+
+    let mut failure_count = 0;
+
+    for row in rows {
+        if row.test_passed() {
+            continue;
+        }
+
+        failure_count += 1;
+        let dep = format!("{}:{}", row.primary.dependent_name, row.primary.dependent_version);
+        let version = row.offered.as_ref().map(|o| o.version.as_str()).unwrap_or("baseline");
+        let version_display = format!("{}:{}", base_crate, version);
+
+        content.push_str("========================================\n");
+        content.push_str(&format!("FAILURE #{}: {} with {}\n", failure_count, dep, version_display));
+        content.push_str("========================================\n\n");
+
+        // Find the failed step and its error
+        for cmd in &row.test.commands {
+            if !cmd.result.passed {
+                content.push_str(&format!("Failed at: {}\n\n", cmd.command.as_str()));
+                for failure in &cmd.result.failures {
+                    content.push_str(&failure.error_message);
+                    if !failure.error_message.ends_with('\n') {
+                        content.push('\n');
+                    }
+                }
+                break;
+            }
+        }
+        content.push_str("\n\n");
+    }
+
+    if failure_count == 0 {
+        content.push_str("No failures recorded.\n");
+    }
+
+    if let Err(e) = std::fs::write(&log_path, &content) {
+        eprintln!("Warning: Failed to write combined log: {}", e);
+    }
+
+    log_path
+}
+
+/// Print simple summary at end
+pub fn print_simple_summary(rows: &[OfferedRow], report_dir: &Path, base_crate: &str, combined_log_path: &Path) {
+    use std::collections::{HashMap, HashSet};
+
+    // Group results by version
+    // Key: (version_string, forced), Value: (regressed_deps, worked_deps)
+    let mut by_version: HashMap<(String, bool), (Vec<String>, Vec<String>)> = HashMap::new();
+    let mut broken_already: Vec<String> = Vec::new();
+
+    // First pass: identify baseline failures (broken already)
+    let mut baseline_failed_deps: HashSet<String> = HashSet::new();
+    let mut baseline_check_passed_deps: HashSet<String> = HashSet::new();
+
+    for row in rows {
+        if row.offered.is_none() {
+            let dep = format!("{}:{}", row.primary.dependent_name, row.primary.dependent_version);
+            if !row.test_passed() {
+                baseline_failed_deps.insert(row.primary.dependent_name.clone());
+                // Check if check passed (for step-level regression detection)
+                let check_passed = row
+                    .test
+                    .commands
+                    .iter()
+                    .filter(|c| c.command == CommandType::Check || c.command == CommandType::Fetch)
+                    .all(|c| c.result.passed);
+                if check_passed {
+                    baseline_check_passed_deps.insert(row.primary.dependent_name.clone());
+                }
+                broken_already.push(dep);
+            }
+        }
+    }
+
+    // Second pass: categorize offered version results
+    for row in rows {
+        if row.offered.is_none() {
+            continue; // Skip baseline rows
+        }
+
+        let offered = row.offered.as_ref().unwrap();
+        let version = offered.version.clone();
+        let forced = offered.forced;
+        let dep = format!("{}:{}", row.primary.dependent_name, row.primary.dependent_version);
+
+        let entry = by_version.entry((version, forced)).or_insert_with(|| (Vec::new(), Vec::new()));
+
+        if row.test_passed() {
+            entry.1.push(dep); // worked
+        } else {
+            // Check if this is a regression
+            let is_regression = if matches!(row.baseline_passed, Some(true)) {
+                true // Traditional regression: baseline fully passed
+            } else if baseline_check_passed_deps.contains(&row.primary.dependent_name) {
+                // Step-level regression: baseline check passed but offered check/fetch failed
+                let failed_step = failed_step_name(row);
+                failed_step == "fetch" || failed_step == "check"
+            } else {
+                false // Not a regression, baseline was already broken at this step
+            };
+
+            if is_regression {
+                entry.0.push(dep); // regressed
+            }
+            // If not a regression, it's already counted in broken_already
+        }
+    }
+
+    // Print summary
+    println!();
+    println!("========================================");
+    println!("SUMMARY");
+    println!("========================================");
+
+    // Print regressions by version
+    for ((version, forced), (regressed, _)) in &by_version {
+        if !regressed.is_empty() {
+            let forced_marker = if *forced { "[forced]" } else { "" };
+            println!("REGRESSED with {}:{}{}: {}", base_crate, version, forced_marker, regressed.join(", "));
+        }
+    }
+
+    // Print worked by version
+    for ((version, forced), (_, worked)) in &by_version {
+        if !worked.is_empty() {
+            let forced_marker = if *forced { "[forced]" } else { "" };
+            println!("WORKED with {}:{}{}: {}", base_crate, version, forced_marker, worked.join(", "));
+        }
+    }
+
+    // Print broken already
+    if !broken_already.is_empty() {
+        println!("BROKEN ALREADY: {}", broken_already.join(", "));
+    }
+
+    // Count totals
+    let total_regressed: usize = by_version.values().map(|(r, _)| r.len()).sum();
+    let total_worked: usize = by_version.values().map(|(_, w)| w.len()).sum();
+
+    println!();
+    println!("Regressed: {}", total_regressed);
+    println!("Worked:    {}", total_worked);
+    println!("Broken:    {}", broken_already.len());
+
+    // Always show report paths
+    println!();
+    println!("Reports:");
+    println!("  Combined log: {}", combined_log_path.display());
+    println!("  Markdown:     {}/report.md", report_dir.display());
+    println!("  JSON:         {}/report.json", report_dir.display());
+}

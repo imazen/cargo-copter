@@ -349,6 +349,11 @@ pub struct BaselineComparison {
     pub baseline_passed: bool,
     /// The baseline version that was compared against
     pub baseline_version: String,
+    /// Step-level baseline results for nuanced regression detection
+    /// If baseline check passed but test failed, a check failure is still a regression
+    pub baseline_fetch_passed: bool,
+    pub baseline_check_passed: Option<bool>, // None if check was skipped
+    pub baseline_test_passed: Option<bool>,  // None if test was skipped
 }
 
 /// Result of testing one (version, dependent) pair
@@ -406,6 +411,73 @@ impl TestResult {
     /// Check if this test passed
     pub fn passed(&self) -> bool {
         self.execution.is_success()
+    }
+
+    /// Check if this is a step-level regression
+    ///
+    /// A step-level regression occurs when the baseline passed a step but the
+    /// offered version failed that step (or an earlier step).
+    ///
+    /// Example: If baseline passes check but fails test, and offered fails check,
+    /// that's a check-level regression even though baseline_passed is false.
+    pub fn is_step_regression(&self) -> bool {
+        let Some(cmp) = &self.baseline else {
+            return false; // Baseline can't regress
+        };
+
+        // Check fetch regression: baseline fetch passed, offered fetch failed
+        if cmp.baseline_fetch_passed && !self.execution.fetch.success {
+            return true;
+        }
+
+        // Check check regression: baseline check passed, offered check failed
+        // (even if baseline test later failed)
+        if let Some(true) = cmp.baseline_check_passed
+            && let Some(ref check) = self.execution.check
+            && !check.success
+        {
+            return true;
+        }
+
+        // Check test regression: baseline test passed, offered test failed
+        if let Some(true) = cmp.baseline_test_passed
+            && let Some(ref test) = self.execution.test
+            && !test.success
+        {
+            return true;
+        }
+
+        false
+    }
+
+    /// Get the step at which regression occurred, if any
+    pub fn regression_step(&self) -> Option<&'static str> {
+        let Some(cmp) = &self.baseline else {
+            return None;
+        };
+
+        // Check fetch regression
+        if cmp.baseline_fetch_passed && !self.execution.fetch.success {
+            return Some("fetch");
+        }
+
+        // Check check regression
+        if let Some(true) = cmp.baseline_check_passed
+            && let Some(ref check) = self.execution.check
+            && !check.success
+        {
+            return Some("check");
+        }
+
+        // Check test regression
+        if let Some(true) = cmp.baseline_test_passed
+            && let Some(ref test) = self.execution.test
+            && !test.success
+        {
+            return Some("test");
+        }
+
+        None
     }
 }
 

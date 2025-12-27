@@ -65,6 +65,11 @@ where
 
         let baseline_passed = baseline_result.execution.is_success();
 
+        // Extract step-level baseline results for nuanced regression detection
+        let baseline_fetch_passed = baseline_result.execution.fetch.success;
+        let baseline_check_passed = baseline_result.execution.check.as_ref().map(|c| c.success);
+        let baseline_test_passed = baseline_result.execution.test.as_ref().map(|t| t.success);
+
         // Extract the spec from baseline for use in offered version tests
         let baseline_spec_requirement = baseline_result.execution.original_requirement.clone();
 
@@ -93,6 +98,9 @@ where
                         .find(|v| v.is_baseline)
                         .map(|v| v.crate_ref.version.display())
                         .unwrap_or_else(|| "unknown".to_string()),
+                    baseline_fetch_passed,
+                    baseline_check_passed,
+                    baseline_test_passed,
                 }),
             };
             on_result(&result); // Stream the result immediately
