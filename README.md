@@ -134,6 +134,7 @@ cargo-copter --clean --top-dependents 5
     --clean                    Clean cache before testing
     --error-lines <N>          Error lines to show [default: 10]
     --skip-normal-testing      Skip auto-patch mode for forced versions
+    --patch-transitive         Patch ALL transitive deps (unify crate versions)
     --json                     JSON output
 ```
 
@@ -160,6 +161,19 @@ cargo-copter --clean --top-dependents 5
 - Bypasses semver requirements
 - Always tests the exact version specified
 - Auto-adds patch mode test unless --skip-normal-testing
+
+### Transitive Patch Mode (--patch-transitive)
+- Adds `[patch.crates-io]` to dependent's Cargo.toml
+- Unifies ALL versions of your crate across the entire dependency tree
+- Resolves "multiple versions of crate X" errors
+- Use when dependents have transitive deps that also use your crate
+
+Example: Testing `rgb` against `image` which depends on `ravif` which also uses `rgb`:
+```bash
+cargo-copter --dependents image --patch-transitive
+```
+Without `--patch-transitive`, `image` might fail with "the trait `AsPixels` is not implemented"
+because `image` uses one version of `rgb` while `ravif` uses another.
 
 ## Caching
 

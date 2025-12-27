@@ -324,6 +324,10 @@ pub struct TestMatrix {
     pub skip_check: bool,
     pub skip_test: bool,
     pub error_lines: usize,
+
+    /// Patch transitive dependencies using [patch.crates-io] in Cargo.toml
+    /// This unifies all versions of the base crate across the dependency tree
+    pub patch_transitive: bool,
 }
 
 impl TestMatrix {

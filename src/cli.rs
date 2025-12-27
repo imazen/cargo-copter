@@ -92,6 +92,14 @@ pub struct CliArgs {
     /// This protects your system from potentially malicious code in dependencies
     #[arg(long)]
     pub docker: bool,
+
+    /// Patch ALL transitive dependencies to use the test version
+    /// Uses [patch.crates-io] in the dependent's Cargo.toml to unify all versions
+    /// of the base crate across the entire dependency tree.
+    /// This resolves "multiple versions of crate X" errors when dependents have
+    /// transitive dependencies that also use the base crate.
+    #[arg(long)]
+    pub patch_transitive: bool,
 }
 
 impl CliArgs {
@@ -178,6 +186,7 @@ mod tests {
             skip_normal_testing: false,
             console_width: None,
             docker: false,
+            patch_transitive: false,
         };
         assert!(args.validate().is_err());
     }
@@ -205,6 +214,7 @@ mod tests {
             skip_normal_testing: false,
             console_width: None,
             docker: false,
+            patch_transitive: false,
         };
         let result = args.validate();
         std::fs::remove_file("./Cargo.toml.test").ok();

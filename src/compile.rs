@@ -515,6 +515,57 @@ fn apply_dependency_override(
     Ok(())
 }
 
+/// Apply a [patch.crates-io] section to Cargo.toml to patch ALL transitive dependencies
+///
+/// This adds or updates the [patch.crates-io] section in the dependent's Cargo.toml,
+/// which causes cargo to unify ALL versions of the specified crate across the entire
+/// dependency tree (including transitive dependencies).
+fn apply_patch_crates_io(crate_path: &Path, crate_name: &str, override_path: &Path) -> Result<(), String> {
+    use std::io::{Read, Write};
+
+    // Convert to absolute path
+    let override_path = if override_path.is_absolute() {
+        override_path.to_path_buf()
+    } else {
+        env::current_dir().map_err(|e| format!("Failed to get current dir: {}", e))?.join(override_path)
+    };
+
+    let cargo_toml_path = crate_path.join("Cargo.toml");
+    let mut content = String::new();
+
+    // Read original Cargo.toml
+    let mut file = fs::File::open(&cargo_toml_path).map_err(|e| format!("Failed to open Cargo.toml: {}", e))?;
+    file.read_to_string(&mut content).map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
+    drop(file);
+
+    // Parse as TOML
+    let mut doc: toml_edit::DocumentMut = content.parse().map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
+
+    // Get or create [patch.crates-io] section
+    if doc.get("patch").is_none() {
+        doc["patch"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    let patch = doc["patch"].as_table_mut().ok_or("Failed to get patch table")?;
+
+    if patch.get("crates-io").is_none() {
+        patch["crates-io"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    let crates_io = patch["crates-io"].as_table_mut().ok_or("Failed to get crates-io table")?;
+
+    // Add the patch entry
+    let mut patch_entry = toml_edit::InlineTable::new();
+    patch_entry.insert("path", override_path.display().to_string().into());
+    crates_io[crate_name] = toml_edit::Item::Value(toml_edit::Value::InlineTable(patch_entry));
+
+    debug!("Applied [patch.crates-io].{} = {{ path = \"{}\" }}", crate_name, override_path.display());
+
+    // Write back
+    let mut file = fs::File::create(&cargo_toml_path).map_err(|e| format!("Failed to create Cargo.toml: {}", e))?;
+    file.write_all(doc.to_string().as_bytes()).map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
+
+    Ok(())
+}
+
 pub fn compile_crate(
     crate_path: &Path,
     step: CompileStep,
@@ -728,6 +779,8 @@ pub struct TestConfig<'a> {
     pub dependent_info: Option<DependentInfo<'a>>,
     /// Test label for logging ("baseline", "WIP", or version)
     pub test_label: Option<&'a str>,
+    /// Use [patch.crates-io] to patch all transitive dependencies
+    pub patch_transitive: bool,
 }
 
 impl<'a> TestConfig<'a> {
@@ -744,7 +797,14 @@ impl<'a> TestConfig<'a> {
             original_requirement: None,
             dependent_info: None,
             test_label: None,
+            patch_transitive: false,
         }
+    }
+
+    /// Set patch_transitive flag (builder pattern)
+    pub fn with_patch_transitive(mut self, patch_transitive: bool) -> Self {
+        self.patch_transitive = patch_transitive;
+        self
     }
 
     /// Set the override path (builder pattern)
@@ -800,10 +860,11 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         original_requirement,
         dependent_info,
         test_label,
+        patch_transitive,
     } = config;
     debug!(
-        "running three-step ICT for {:?} (force={}, expected_version={:?})",
-        crate_path, force_versions, expected_version
+        "running three-step ICT for {:?} (force={}, expected_version={:?}, patch_transitive={})",
+        crate_path, force_versions, expected_version, patch_transitive
     );
 
     // Always restore Cargo.toml from original backup to prevent contamination
@@ -817,8 +878,12 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
     }
 
     // Setup: Choose patching strategy based on mode
-    // For FORCE mode: We'll modify Cargo.toml and rely on restore_cargo_toml for safety
-    // For PATCH mode: We use --config flag (no file modifications needed)
+    // For FORCE mode: Modify Cargo.toml to bypass semver (direct dependency)
+    // For PATCH_TRANSITIVE mode: Add [patch.crates-io] section to patch ALL transitive deps
+    // For PATCH mode: Use --config flag (only patches direct dep)
+    //
+    // IMPORTANT: When both force AND patch_transitive are enabled,
+    // we apply BOTH: force for direct dep + [patch.crates-io] for transitive deps
     let override_path_buf = if let Some(override_path) = override_path {
         if force_versions {
             // FORCE MODE: Must modify Cargo.toml to bypass semver
@@ -827,6 +892,19 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
             // Replace dependency spec directly (bypasses semver)
             apply_dependency_override(crate_path, base_crate_name, override_path, DependencyOverrideMode::Force)?;
 
+            // If patch_transitive is also enabled, add [patch.crates-io] for transitive deps
+            if patch_transitive {
+                apply_patch_crates_io(crate_path, base_crate_name, override_path)?;
+                debug!("Applied BOTH force override AND [patch.crates-io] for transitive patching");
+            }
+
+            None // Don't use --config when we modified Cargo.toml
+        } else if patch_transitive {
+            // PATCH_TRANSITIVE MODE (without force): Add [patch.crates-io] section to Cargo.toml
+            // This unifies ALL versions of the crate across the entire dependency tree
+            apply_patch_crates_io(crate_path, base_crate_name, override_path)?;
+
+            debug!("Applied [patch.crates-io] for transitive patching");
             None // Don't use --config when we modified Cargo.toml
         } else {
             // PATCH MODE: Use --config flag (clean, no file modifications)
@@ -843,7 +921,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         None // No override (baseline test)
     };
 
-    // Build override_spec for compile_crate calls (only used in patch mode)
+    // Build override_spec for compile_crate calls (only used in regular patch mode)
     let override_spec = override_path_buf.as_ref().map(|path| (base_crate_name, path.as_path()));
 
     // Step 1: Fetch (always runs)
@@ -1122,5 +1200,73 @@ mod tests {
             diagnostics: Vec::new(),
         };
         assert!(!result.failed());
+    }
+
+    #[test]
+    fn test_apply_patch_crates_io() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let crate_path = temp_dir.path();
+
+        // Create a basic Cargo.toml
+        let cargo_toml = crate_path.join("Cargo.toml");
+        fs::write(
+            &cargo_toml,
+            r#"[package]
+name = "test-crate"
+version = "0.1.0"
+
+[dependencies]
+rgb = "0.8.50"
+"#,
+        )
+        .unwrap();
+
+        // Apply the patch
+        let override_path = PathBuf::from("/some/local/path");
+        apply_patch_crates_io(crate_path, "rgb", &override_path).unwrap();
+
+        // Verify the result
+        let content = fs::read_to_string(&cargo_toml).unwrap();
+        assert!(content.contains("[patch.crates-io]"), "Should have [patch.crates-io] section");
+        assert!(content.contains("rgb"), "Should have rgb entry");
+        assert!(content.contains("/some/local/path"), "Should have the override path");
+    }
+
+    #[test]
+    fn test_apply_patch_crates_io_preserves_existing_content() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let crate_path = temp_dir.path();
+
+        // Create a Cargo.toml with existing patch section
+        let cargo_toml = crate_path.join("Cargo.toml");
+        fs::write(
+            &cargo_toml,
+            r#"[package]
+name = "test-crate"
+version = "0.1.0"
+
+[dependencies]
+rgb = "0.8.50"
+serde = "1.0"
+
+[patch.crates-io]
+other-crate = { path = "/other/path" }
+"#,
+        )
+        .unwrap();
+
+        // Apply the patch
+        let override_path = PathBuf::from("/rgb/path");
+        apply_patch_crates_io(crate_path, "rgb", &override_path).unwrap();
+
+        // Verify the result
+        let content = fs::read_to_string(&cargo_toml).unwrap();
+        assert!(content.contains("other-crate"), "Should preserve existing patches");
+        assert!(content.contains("/other/path"), "Should preserve existing patch path");
+        assert!(content.contains("/rgb/path"), "Should have new rgb path");
     }
 }
