@@ -64,9 +64,33 @@ In cargo-copter output:
 
 | Marker | Meaning |
 |--------|---------|
+| (none) | Natural resolution - spec satisfied version |
 | `!`    | Force mode - spec replaced in Cargo.toml |
-| `!!`   | Patch mode - [patch.crates-io] for direct dep |
-| `!!!`  | Recursive patch - patching transitive deps too |
+| `!!`   | Patch retry - auto-added [patch.crates-io] after multi-version error |
+| `!!!`  | Deep patch - recursive transitive patching (depth 2+) |
+
+## Auto-Retry Logic (Planned)
+
+When `--force` is used and check fails with "multiple versions" error:
+
+1. **Detect conflict**: Parse error for "there are multiple different versions of crate"
+2. **Extract deps**: Find which crates are using the wrong version (e.g., `ravif`)
+3. **Apply patch**: Add `[patch.crates-io]` section to unify all transitive deps
+4. **Retry check**: Run cargo check again with patching
+5. **Track depth**: If still fails, identify deeper transitive deps and repeat
+
+This auto-retry will:
+- Deprecate the explicit `--patch-transitive` flag
+- Automatically escalate from `!` to `!!` to `!!!` as needed
+- Report the final patching depth in output
+
+## Implementation Status
+
+- [x] Conflict detection in error_extract.rs
+- [ ] Auto-retry in compile.rs
+- [ ] Depth tracking in types.rs
+- [ ] Marker display in report.rs
+- [ ] Deprecation of --patch-transitive
 
 ## Resolution Strategy
 
