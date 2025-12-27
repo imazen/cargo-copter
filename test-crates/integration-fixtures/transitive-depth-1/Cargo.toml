@@ -1,0 +1,10 @@
+[package]
+name = "transitive-depth-1"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+# Strict requirement - only allows 0.1.x
+base-crate = { path = "../base-crate-v1", version = "0.1" }

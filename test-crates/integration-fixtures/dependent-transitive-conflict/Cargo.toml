@@ -1,0 +1,14 @@
+[package]
+name = "dependent-transitive-conflict"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+# Direct dependency on base-crate (flexible spec)
+base-crate = { path = "../base-crate-v1", version = ">=0.1" }
+
+# Also depends on transitive-depth-4, which has strict base-crate requirement
+# This creates a potential version conflict when forcing base-crate to v2/v3
+transitive-depth-4 = { path = "../transitive-depth-4" }
