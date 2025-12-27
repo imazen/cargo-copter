@@ -1059,6 +1059,10 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
                 "REGRESSION: {} with {}:{}{} - {} failed ({})",
                 dep, base_crate, version, forced_marker, step, baseline_note
             );
+            // Print first error line
+            if let Some(error) = first_error_line(row) {
+                println!("  {}", error);
+            }
         }
     }
 
@@ -1073,6 +1077,10 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
                 "REGRESSION: {} with {}:{}{} - tests failed (baseline tests passed)",
                 dep, base_crate, version, forced_marker
             );
+            // Print first error line
+            if let Some(error) = first_error_line(row) {
+                println!("  {}", error);
+            }
         }
     }
 
@@ -1106,6 +1114,42 @@ fn failed_step_name(row: &OfferedRow) -> &'static str {
         }
     }
     "unknown"
+}
+
+/// Get the first error line from a failed row (for --simple output)
+fn first_error_line(row: &OfferedRow) -> Option<String> {
+    for cmd in &row.test.commands {
+        if !cmd.result.passed {
+            for failure in &cmd.result.failures {
+                if !failure.error_message.is_empty() {
+                    // Find the first line that starts with "error" (case-insensitive)
+                    for line in failure.error_message.lines() {
+                        let trimmed = line.trim();
+                        if trimmed.starts_with("error") {
+                            // Truncate long lines
+                            let display = if trimmed.len() > 100 {
+                                format!("{}...", &trimmed[..100])
+                            } else {
+                                trimmed.to_string()
+                            };
+                            return Some(display);
+                        }
+                    }
+                    // Fallback: first non-empty line
+                    if let Some(first) = failure.error_message.lines().find(|l| !l.trim().is_empty()) {
+                        let trimmed = first.trim();
+                        let display = if trimmed.len() > 100 {
+                            format!("{}...", &trimmed[..100])
+                        } else {
+                            trimmed.to_string()
+                        };
+                        return Some(display);
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Write combined log file with all failures
