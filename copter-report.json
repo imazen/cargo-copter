@@ -1,26 +1,14 @@
 {
   "comparison_stats": [
     {
-      "already_broken": 0,
-      "fully_passing": 1,
-      "passed_check": 1,
-      "passed_fetch": 1,
-      "passed_test": 1,
+      "already_broken": 1,
+      "fully_passing": 3,
+      "passed_check": 4,
+      "passed_fetch": 5,
+      "passed_test": 3,
       "regressions": [],
-      "total_tested": 1,
+      "total_tested": 5,
       "version_label": "Default"
-    },
-    {
-      "already_broken": null,
-      "fully_passing": 0,
-      "passed_check": 0,
-      "passed_fetch": 1,
-      "passed_test": 0,
-      "regressions": [
-        "load_image (0.8.52)"
-      ],
-      "total_tested": 1,
-      "version_label": "0.8.91"
     }
   ],
   "crate_name": "rgb",
@@ -28,19 +16,19 @@
   "summary": {
     "broken": 0,
     "passed": 0,
-    "regressed": 1,
-    "total": 1
+    "regressed": 0,
+    "total": 0
   },
   "test_results": [
     {
       "baseline_passed": null,
       "offered": null,
       "primary": {
-        "dependent_name": "load_image",
-        "dependent_version": "3.3.1",
+        "dependent_name": "ansi_colours",
+        "dependent_version": "1.2.3",
         "resolved_source": "CratesIo",
         "resolved_version": "0.8.52",
-        "spec": "0.8.52",
+        "spec": "^0.8",
         "used_offered_version": true
       },
       "test": {
@@ -49,7 +37,7 @@
             "command": "Fetch",
             "features": [],
             "result": {
-              "duration": 0.572650998,
+              "duration": 0.602603053,
               "failures": [],
               "passed": true
             }
@@ -58,7 +46,7 @@
             "command": "Check",
             "features": [],
             "result": {
-              "duration": 0.067430362,
+              "duration": 0.055118659,
               "failures": [],
               "passed": true
             }
@@ -67,7 +55,7 @@
             "command": "Test",
             "features": [],
             "result": {
-              "duration": 0.066080909,
+              "duration": 1.814372154,
               "failures": [],
               "passed": true
             }
@@ -77,18 +65,146 @@
       "transitive": [
         {
           "dependency": {
-            "dependent_name": "load_image",
+            "dependent_name": "ansi_colours",
             "dependent_version": "?",
             "resolved_source": "CratesIo",
             "resolved_version": "0.8.52",
-            "spec": "^0.8.52",
+            "spec": "^0.8",
             "used_offered_version": false
           },
           "depth": 1
         },
         {
           "dependency": {
-            "dependent_name": "lodepng",
+            "dependent_name": "empfindung",
+            "dependent_version": "?",
+            "resolved_source": "CratesIo",
+            "resolved_version": "0.8.52",
+            "spec": "^0.8",
+            "used_offered_version": false
+          },
+          "depth": 1
+        }
+      ]
+    },
+    {
+      "baseline_passed": null,
+      "offered": null,
+      "primary": {
+        "dependent_name": "resvg",
+        "dependent_version": "0.45.1",
+        "resolved_source": "CratesIo",
+        "resolved_version": "0.8.52",
+        "spec": "^0.8",
+        "used_offered_version": true
+      },
+      "test": {
+        "commands": [
+          {
+            "command": "Fetch",
+            "features": [],
+            "result": {
+              "duration": 0.721374265,
+              "failures": [],
+              "passed": true
+            }
+          },
+          {
+            "command": "Check",
+            "features": [],
+            "result": {
+              "duration": 3.268399957,
+              "failures": [],
+              "passed": true
+            }
+          },
+          {
+            "command": "Test",
+            "features": [],
+            "result": {
+              "duration": 5.3610818479999995,
+              "failures": [],
+              "passed": true
+            }
+          }
+        ]
+      },
+      "transitive": [
+        {
+          "dependency": {
+            "dependent_name": "resvg",
+            "dependent_version": "?",
+            "resolved_source": "CratesIo",
+            "resolved_version": "0.8.52",
+            "spec": "^0.8",
+            "used_offered_version": false
+          },
+          "depth": 1
+        }
+      ]
+    },
+    {
+      "baseline_passed": null,
+      "offered": null,
+      "primary": {
+        "dependent_name": "image",
+        "dependent_version": "0.25.9",
+        "resolved_source": "CratesIo",
+        "resolved_version": "0.8.52",
+        "spec": "^0.8.48",
+        "used_offered_version": true
+      },
+      "test": {
+        "commands": [
+          {
+            "command": "Fetch",
+            "features": [],
+            "result": {
+              "duration": 1.566242023,
+              "failures": [],
+              "passed": true
+            }
+          },
+          {
+            "command": "Check",
+            "features": [],
+            "result": {
+              "duration": 8.537373179,
+              "failures": [],
+              "passed": true
+            }
+          },
+          {
+            "command": "Test",
+            "features": [],
+            "result": {
+              "duration": 15.809835643,
+              "failures": [
+                {
+                  "crate_name": "dependent",
+                  "error_message": "error: couldn't read `src/../tests/images/jpg/portrait_2.jpg`: No such file or directory (os error 2)\n   --> src/metadata.rs:169:31\n    |\n169 |     const TEST_IMAGE: &[u8] = include_bytes!(\"../tests/images/jpg/portrait_2.jpg\");\n    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n"
+                }
+              ],
+              "passed": false
+            }
+          }
+        ]
+      },
+      "transitive": [
+        {
+          "dependency": {
+            "dependent_name": "image",
+            "dependent_version": "?",
+            "resolved_source": "CratesIo",
+            "resolved_version": "0.8.52",
+            "spec": "^0.8.48",
+            "used_offered_version": false
+          },
+          "depth": 1
+        },
+        {
+          "dependency": {
+            "dependent_name": "ravif",
             "dependent_version": "?",
             "resolved_source": "CratesIo",
             "resolved_version": "0.8.52",
@@ -100,17 +216,14 @@
       ]
     },
     {
-      "baseline_passed": true,
-      "offered": {
-        "forced": true,
-        "version": "0.8.91"
-      },
+      "baseline_passed": null,
+      "offered": null,
       "primary": {
-        "dependent_name": "load_image",
-        "dependent_version": "3.3.1",
-        "resolved_source": "Local",
-        "resolved_version": "0.8.91",
-        "spec": "0.8.52",
+        "dependent_name": "svgfilters",
+        "dependent_version": "0.4.0",
+        "resolved_source": "CratesIo",
+        "resolved_version": "0.8.52",
+        "spec": "^0.8",
         "used_offered_version": true
       },
       "test": {
@@ -119,7 +232,7 @@
             "command": "Fetch",
             "features": [],
             "result": {
-              "duration": 0.365090336,
+              "duration": 0.308696384,
               "failures": [],
               "passed": true
             }
@@ -128,11 +241,67 @@
             "command": "Check",
             "features": [],
             "result": {
-              "duration": 0.275122344,
+              "duration": 0.388713797,
+              "failures": [],
+              "passed": true
+            }
+          },
+          {
+            "command": "Test",
+            "features": [],
+            "result": {
+              "duration": 0.48552171,
+              "failures": [],
+              "passed": true
+            }
+          }
+        ]
+      },
+      "transitive": [
+        {
+          "dependency": {
+            "dependent_name": "svgfilters",
+            "dependent_version": "?",
+            "resolved_source": "CratesIo",
+            "resolved_version": "0.8.52",
+            "spec": "^0.8",
+            "used_offered_version": false
+          },
+          "depth": 1
+        }
+      ]
+    },
+    {
+      "baseline_passed": null,
+      "offered": null,
+      "primary": {
+        "dependent_name": "ravif",
+        "dependent_version": "0.12.0",
+        "resolved_source": "CratesIo",
+        "resolved_version": "0.8.52",
+        "spec": "^0.8.50",
+        "used_offered_version": true
+      },
+      "test": {
+        "commands": [
+          {
+            "command": "Fetch",
+            "features": [],
+            "result": {
+              "duration": 0.902216136,
+              "failures": [],
+              "passed": true
+            }
+          },
+          {
+            "command": "Check",
+            "features": [],
+            "result": {
+              "duration": 8.056077456,
               "failures": [
                 {
                   "crate_name": "dependent",
-                  "error_message": "error[E0599]: no method named `value` found for mutable reference `&mut rgb::Gray<u16>` in the current scope\n  --> src/endian.rs:49:38\n   |\n49 |             *n = Gray(u16::from_be(n.value()));\n   |                                      ^^^^^ method not found in `&mut rgb::Gray<u16>`\n\n\n\nerror[E0599]: no method named `value` found for struct `rgb::Gray<u8>` in the current scope\n   --> src/image.rs:126:93\n    |\n126 | ...   ImageData::GRAY8(bitmap) => ImgVec::new(bitmap.into_iter().map(|g| RGBA8::new(g.value(),g.value(),g.value(),255)).collect(), self.w...\n    |                                                                                       ^^^^^ method not found in `rgb::Gray<u8>`\n\n\n\nerror[E0599]: no method named `value` found for struct `rgb::Gray<u8>` in the current scope\n   --> src/image.rs:126:103\n    |\n126 | ...ap.into_iter().map(|g| RGBA8::new(g.value(),g.value(),g.value(),255)).collect(), self.width, self.height),\n    |                                                  ^^^^^ method not found in `rgb::Gray<u8>`\n\n\n\nerror[E0599]: no method named `value` found for struct `rgb::Gray<u8>` in the current scope\n   --> src/image.rs:126:113\n    |\n126 | ...er().map(|g| RGBA8::new(g.value(),g.value(),g.value(),255)).collect(), self.width, self.height),\n    |                                                  ^^^^^ method not found in `rgb::Gray<u8>`\n\n\n\nerror[E0599]: no method named `value` found for struct `rgb::Gray<u16>` in the current scope\n   --> src/image.rs:128:29\n    |\n128 |                 let g = (px.value() >> 8) as u8;\n    |                             ^^^^^ method not found in `rgb::Gray<u16>`\n\n\n\nerror[E0277]: the trait bound `rgb::formats::rgba::Rgba<u8>: IsTransparentPixel` is not satisfied\n  --> src/png.rs:46:64\n   |\n46 |                 let discard_alpha = discard_alpha || is_opaque(image.buffer.as_ref());\n   |                                                      --------- ^^^^^^^^^^^^^^^^^^^^^ the trait `IsTransparentPixel` is not implemented for `rgb::formats::rgba::Rgba<u8>`\n   |                                                      |\n   |                                                      required by a bound introduced by this call\n   |\n   = help: the following other types implement trait `IsTransparentPixel`:\n             rgb::GrayAlpha<u16>\n             rgb::GrayAlpha<u8>\n             rgb::Rgba<u16>\n             rgb::Rgba<u8>\nnote: required by a bound in `is_opaque`\n  --> src/alpha.rs:37:52\n   |\n37 | pub fn is_opaque<T>(bitmap: &[T]) -> bool where T: IsTransparentPixel {\n   |                                                    ^^^^^^^^^^^^^^^^^^ required by this bound in `is_opaque`\n\n\n\nerror[E0599]: the method `to_image` exists for struct `Vec<rgb::formats::rgba::Rgba<u8>>`, but its trait bounds were not satisfied\n   --> src/png.rs:47:33\n    |\n 47 |                 Ok(image.buffer.to_image(profile, image.width, image.height, discard_alpha, meta))\n    |                                 ^^^^^^^^ method cannot be called on `Vec<rgb::formats::rgba::Rgba<u8>>` due to unsatisfied trait bounds\n    |\n   ::: src/image.rs:63:1\n    |\n 63 | pub struct Image {\n    | ---------------- doesn't satisfy `_: FromOptions<Img<Vec<Rgba<u8>>>>`\n    |\n   ::: /home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rgb-0.8.52/src/formats/rgba.rs:14:1\n    |\n 14 | pub struct Rgba<T, A = T> {\n    | ------------------------- doesn't satisfy `rgb::formats::rgba::Rgba<u8>: CopyAlpha<_>`, `rgb::formats::rgba::Rgba<u8>: LcmsPixelConversion` or `rgb::formats::rgba::Rgba<u8>: LcmsPixelFormat`\n    |\nnote: the following trait bounds were not satisfied:\n      `image::Image: FromOptions<Img<Vec<rgb::formats::rgba::Rgba<u8>>>>`\n      `rgb::formats::rgba::Rgba<u8>: CopyAlpha<_>`\n      `rgb::formats::rgba::Rgba<u8>: LcmsPixelConversion`\n      `rgb::formats::rgba::Rgba<u8>: LcmsPixelFormat`\n   --> src/convert.rs:68:14\n    |\n 67 | impl<T> ToSRGBImage for [T]\n    |         -----------     ---\n 68 |     where T: LcmsPixelFormat + LcmsPixelConversion,\n    |              ^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n    |              |\n    |              unsatisfied trait bound introduced here\n 69 |           T::Converted: LcmsPixelFormat + Default,\n    |                         ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                         |\n    |                         unsatisfied trait bound introduced here\n 70 |           T::ConvertedOpaque: LcmsPixelFormat + Default,\n    |                               ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                               |\n    |                               unsatisfied trait bound introduced here\n 71 |           Image: FromOptions<ImgVec<T>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 72 |           Image: FromOptions<ImgVec<T::Converted>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 73 |           Image: FromOptions<ImgVec<T::ConvertedOpaque>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 74 |           T: CopyAlpha<<T as LcmsPixelConversion>::Converted>\n    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\nnote: the trait `FromOptions` must be implemented\n   --> src/convert.rs:131:1\n    |\n131 | pub trait FromOptions<T> {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: items from traits can only be used if the trait is implemented and in scope\nnote: `ToSRGBImage` defines an item `to_image`, perhaps you need to implement it\n   --> src/convert.rs:45:1\n    |\n 45 | pub(crate) trait ToSRGBImage {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n\n\nerror[E0599]: the method `to_image` exists for struct `Vec<lodepng::RGB<u8>>`, but its trait bounds were not satisfied\n   --> src/png.rs:49:63\n    |\n 49 |             lodepng::Image::RGB(mut image) => Ok(image.buffer.to_image(profile, image.width, image.height, discard_alpha, meta)),\n    |                                                               ^^^^^^^^ method cannot be called on `Vec<lodepng::RGB<u8>>` due to unsatisfied trait bounds\n    |\n   ::: src/image.rs:63:1\n    |\n 63 | pub struct Image {\n    | ---------------- doesn't satisfy `_: FromOptions<Img<Vec<RGB<u8>>>>`\n    |\n   ::: /home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rgb-0.8.52/src/formats/rgb.rs:14:1\n    |\n 14 | pub struct Rgb<T> {\n    | ----------------- doesn't satisfy `lodepng::RGB<u8>: CopyAlpha<_>`, `lodepng::RGB<u8>: LcmsPixelConversion` or `lodepng::RGB<u8>: LcmsPixelFormat`\n    |\nnote: the following trait bounds were not satisfied:\n      `image::Image: FromOptions<Img<Vec<lodepng::RGB<u8>>>>`\n      `lodepng::RGB<u8>: CopyAlpha<_>`\n      `lodepng::RGB<u8>: LcmsPixelConversion`\n      `lodepng::RGB<u8>: LcmsPixelFormat`\n   --> src/convert.rs:68:14\n    |\n 67 | impl<T> ToSRGBImage for [T]\n    |         -----------     ---\n 68 |     where T: LcmsPixelFormat + LcmsPixelConversion,\n    |              ^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n    |              |\n    |              unsatisfied trait bound introduced here\n 69 |           T::Converted: LcmsPixelFormat + Default,\n    |                         ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                         |\n    |                         unsatisfied trait bound introduced here\n 70 |           T::ConvertedOpaque: LcmsPixelFormat + Default,\n    |                               ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                               |\n    |                               unsatisfied trait bound introduced here\n 71 |           Image: FromOptions<ImgVec<T>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 72 |           Image: FromOptions<ImgVec<T::Converted>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 73 |           Image: FromOptions<ImgVec<T::ConvertedOpaque>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 74 |           T: CopyAlpha<<T as LcmsPixelConversion>::Converted>\n    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\nnote: the trait `FromOptions` must be implemented\n   --> src/convert.rs:131:1\n    |\n131 | pub trait FromOptions<T> {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: items from traits can only be used if the trait is implemented and in scope\nnote: `ToSRGBImage` defines an item `to_image`, perhaps you need to implement it\n   --> src/convert.rs:45:1\n    |\n 45 | pub(crate) trait ToSRGBImage {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n\n\nerror[E0599]: no method named `to_native` found for struct `Vec<lodepng::RGB<u16>>` in the current scope\n  --> src/png.rs:50:65\n   |\n50 | ...   lodepng::Image::RGB16(mut image) => Ok(image.buffer.to_native().to_image(profile, image.width, image.height, discard_alpha, meta)),\n   |                                                           ^^^^^^^^^ method not found in `Vec<lodepng::RGB<u16>>`\n   |\n   = help: items from traits can only be used if the trait is implemented and in scope\nnote: `NativeEndian` defines an item `to_native`, perhaps you need to implement it\n  --> src/endian.rs:4:1\n   |\n 4 | pub trait NativeEndian {\n   | ^^^^^^^^^^^^^^^^^^^^^^\n\n\n\nerror[E0277]: the trait bound `rgb::formats::rgba::Rgba<u16>: IsTransparentPixel` is not satisfied\n  --> src/png.rs:52:64\n   |\n52 |                 let discard_alpha = discard_alpha || is_opaque(image.buffer.as_ref());\n   |                                                      --------- ^^^^^^^^^^^^^^^^^^^^^ the trait `IsTransparentPixel` is not implemented for `rgb::formats::rgba::Rgba<u16>`\n   |                                                      |\n   |                                                      required by a bound introduced by this call\n   |\n   = help: the following other types implement trait `IsTransparentPixel`:\n             rgb::GrayAlpha<u16>\n             rgb::GrayAlpha<u8>\n             rgb::Rgba<u16>\n             rgb::Rgba<u8>\nnote: required by a bound in `is_opaque`\n  --> src/alpha.rs:37:52\n   |\n37 | pub fn is_opaque<T>(bitmap: &[T]) -> bool where T: IsTransparentPixel {\n   |                                                    ^^^^^^^^^^^^^^^^^^ required by this bound in `is_opaque`\n\n\n\nerror[E0599]: no method named `to_native` found for struct `Vec<rgb::formats::rgba::Rgba<u16>>` in the current scope\n  --> src/png.rs:53:33\n   |\n53 |                 Ok(image.buffer.to_native().to_image(profile, image.width, image.height, discard_alpha, meta))\n   |                                 ^^^^^^^^^ method not found in `Vec<rgb::formats::rgba::Rgba<u16>>`\n   |\n   = help: items from traits can only be used if the trait is implemented and in scope\nnote: `NativeEndian` defines an item `to_native`, perhaps you need to implement it\n  --> src/endian.rs:4:1\n   |\n 4 | pub trait NativeEndian {\n   | ^^^^^^^^^^^^^^^^^^^^^^\n\n\n\nerror[E0599]: the method `to_image` exists for struct `Vec<lodepng::Grey<u8>>`, but its trait bounds were not satisfied\n   --> src/png.rs:55:64\n    |\n 55 |             lodepng::Image::Grey(mut image) => Ok(image.buffer.to_image(profile, image.width, image.height, discard_alpha, meta)),\n    |                                                                ^^^^^^^^ method cannot be called on `Vec<lodepng::Grey<u8>>` due to unsatisfied trait bounds\n    |\n   ::: src/image.rs:63:1\n    |\n 63 | pub struct Image {\n    | ---------------- doesn't satisfy `_: FromOptions<Img<Vec<Grey<u8>>>>`\n    |\n   ::: /home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rgb-0.8.52/src/formats/gray.rs:7:1\n    |\n  7 | pub struct Gray_v08<T>(\n    | ---------------------- doesn't satisfy `lodepng::Grey<u8>: CopyAlpha<_>`, `lodepng::Grey<u8>: LcmsPixelConversion` or `lodepng::Grey<u8>: LcmsPixelFormat`\n    |\nnote: the following trait bounds were not satisfied:\n      `image::Image: FromOptions<Img<Vec<lodepng::Grey<u8>>>>`\n      `lodepng::Grey<u8>: CopyAlpha<_>`\n      `lodepng::Grey<u8>: LcmsPixelConversion`\n      `lodepng::Grey<u8>: LcmsPixelFormat`\n   --> src/convert.rs:68:14\n    |\n 67 | impl<T> ToSRGBImage for [T]\n    |         -----------     ---\n 68 |     where T: LcmsPixelFormat + LcmsPixelConversion,\n    |              ^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n    |              |\n    |              unsatisfied trait bound introduced here\n 69 |           T::Converted: LcmsPixelFormat + Default,\n    |                         ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                         |\n    |                         unsatisfied trait bound introduced here\n 70 |           T::ConvertedOpaque: LcmsPixelFormat + Default,\n    |                               ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                               |\n    |                               unsatisfied trait bound introduced here\n 71 |           Image: FromOptions<ImgVec<T>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 72 |           Image: FromOptions<ImgVec<T::Converted>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 73 |           Image: FromOptions<ImgVec<T::ConvertedOpaque>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 74 |           T: CopyAlpha<<T as LcmsPixelConversion>::Converted>\n    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\nnote: the trait `FromOptions` must be implemented\n   --> src/convert.rs:131:1\n    |\n131 | pub trait FromOptions<T> {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: items from traits can only be used if the trait is implemented and in scope\nnote: `ToSRGBImage` defines an item `to_image`, perhaps you need to implement it\n   --> src/convert.rs:45:1\n    |\n 45 | pub(crate) trait ToSRGBImage {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n\n\nerror[E0599]: no method named `to_native` found for struct `Vec<lodepng::Grey<u16>>` in the current scope\n  --> src/png.rs:56:66\n   |\n56 | ...   lodepng::Image::Grey16(mut image) => Ok(image.buffer.to_native().to_image(profile, image.width, image.height, discard_alpha, meta)),\n   |                                                            ^^^^^^^^^ method not found in `Vec<lodepng::Grey<u16>>`\n   |\n   = help: items from traits can only be used if the trait is implemented and in scope\nnote: `NativeEndian` defines an item `to_native`, perhaps you need to implement it\n  --> src/endian.rs:4:1\n   |\n 4 | pub trait NativeEndian {\n   | ^^^^^^^^^^^^^^^^^^^^^^\n\n\n\nerror[E0277]: the trait bound `lodepng::GreyAlpha<u8>: IsTransparentPixel` is not satisfied\n  --> src/png.rs:58:64\n   |\n58 |                 let discard_alpha = discard_alpha || is_opaque(image.buffer.as_ref());\n   |                                                      --------- ^^^^^^^^^^^^^^^^^^^^^ the trait `IsTransparentPixel` is not implemented for `lodepng::GreyAlpha<u8>`\n   |                                                      |\n   |                                                      required by a bound introduced by this call\n   |\n   = help: the following other types implement trait `IsTransparentPixel`:\n             rgb::GrayAlpha<u16>\n             rgb::GrayAlpha<u8>\n             rgb::Rgba<u16>\n             rgb::Rgba<u8>\nnote: required by a bound in `is_opaque`\n  --> src/alpha.rs:37:52\n   |\n37 | pub fn is_opaque<T>(bitmap: &[T]) -> bool where T: IsTransparentPixel {\n   |                                                    ^^^^^^^^^^^^^^^^^^ required by this bound in `is_opaque`\n\n\n\nerror[E0599]: the method `to_image` exists for struct `Vec<lodepng::GreyAlpha<u8>>`, but its trait bounds were not satisfied\n   --> src/png.rs:59:33\n    |\n 59 |                 Ok(image.buffer.to_image(profile, image.width, image.height, discard_alpha, meta))\n    |                                 ^^^^^^^^ method cannot be called on `Vec<lodepng::GreyAlpha<u8>>` due to unsatisfied trait bounds\n    |\n   ::: src/image.rs:63:1\n    |\n 63 | pub struct Image {\n    | ---------------- doesn't satisfy `_: FromOptions<Img<Vec<GreyAlpha<u8>>>>`\n    |\n   ::: /home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rgb-0.8.52/src/formats/gray_alpha.rs:14:1\n    |\n 14 | pub struct GrayAlpha_v08<T, A = T>(\n    | ---------------------------------- doesn't satisfy `lodepng::GreyAlpha<u8>: CopyAlpha<_>`, `lodepng::GreyAlpha<u8>: LcmsPixelConversion` or `lodepng::GreyAlpha<u8>: LcmsPixelFormat`\n    |\nnote: the following trait bounds were not satisfied:\n      `image::Image: FromOptions<Img<Vec<lodepng::GreyAlpha<u8>>>>`\n      `lodepng::GreyAlpha<u8>: CopyAlpha<_>`\n      `lodepng::GreyAlpha<u8>: LcmsPixelConversion`\n      `lodepng::GreyAlpha<u8>: LcmsPixelFormat`\n   --> src/convert.rs:68:14\n    |\n 67 | impl<T> ToSRGBImage for [T]\n    |         -----------     ---\n 68 |     where T: LcmsPixelFormat + LcmsPixelConversion,\n    |              ^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n    |              |\n    |              unsatisfied trait bound introduced here\n 69 |           T::Converted: LcmsPixelFormat + Default,\n    |                         ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                         |\n    |                         unsatisfied trait bound introduced here\n 70 |           T::ConvertedOpaque: LcmsPixelFormat + Default,\n    |                               ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                               |\n    |                               unsatisfied trait bound introduced here\n 71 |           Image: FromOptions<ImgVec<T>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 72 |           Image: FromOptions<ImgVec<T::Converted>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 73 |           Image: FromOptions<ImgVec<T::ConvertedOpaque>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 74 |           T: CopyAlpha<<T as LcmsPixelConversion>::Converted>\n    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\nnote: the trait `FromOptions` must be implemented\n   --> src/convert.rs:131:1\n    |\n131 | pub trait FromOptions<T> {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: items from traits can only be used if the trait is implemented and in scope\nnote: `ToSRGBImage` defines an item `to_image`, perhaps you need to implement it\n   --> src/convert.rs:45:1\n    |\n 45 | pub(crate) trait ToSRGBImage {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n\n\nerror[E0277]: the trait bound `lodepng::GreyAlpha<u16>: IsTransparentPixel` is not satisfied\n  --> src/png.rs:62:64\n   |\n62 |                 let discard_alpha = discard_alpha || is_opaque(image.buffer.as_ref());\n   |                                                      --------- ^^^^^^^^^^^^^^^^^^^^^ the trait `IsTransparentPixel` is not implemented for `lodepng::GreyAlpha<u16>`\n   |                                                      |\n   |                                                      required by a bound introduced by this call\n   |\n   = help: the following other types implement trait `IsTransparentPixel`:\n             rgb::GrayAlpha<u16>\n             rgb::GrayAlpha<u8>\n             rgb::Rgba<u16>\n             rgb::Rgba<u8>\nnote: required by a bound in `is_opaque`\n  --> src/alpha.rs:37:52\n   |\n37 | pub fn is_opaque<T>(bitmap: &[T]) -> bool where T: IsTransparentPixel {\n   |                                                    ^^^^^^^^^^^^^^^^^^ required by this bound in `is_opaque`\n\n\n\nerror[E0599]: no method named `to_native` found for struct `Vec<lodepng::GreyAlpha<u16>>` in the current scope\n  --> src/png.rs:63:33\n   |\n63 |                 Ok(image.buffer.to_native().to_image(profile, image.width, image.height, discard_alpha, meta))\n   |                                 ^^^^^^^^^ method not found in `Vec<lodepng::GreyAlpha<u16>>`\n   |\n   = help: items from traits can only be used if the trait is implemented and in scope\nnote: `NativeEndian` defines an item `to_native`, perhaps you need to implement it\n  --> src/endian.rs:4:1\n   |\n 4 | pub trait NativeEndian {\n   | ^^^^^^^^^^^^^^^^^^^^^^\n\n\n\nerror[E0277]: the trait bound `rgb::formats::rgba::Rgba<u8>: IsTransparentPixel` is not satisfied\n  --> src/png.rs:72:72\n   |\n72 |                         let discard_alpha = discard_alpha || is_opaque(pal);\n   |                                                              --------- ^^^ the trait `IsTransparentPixel` is not implemented for `rgb::formats::rgba::Rgba<u8>`\n   |                                                              |\n   |                                                              required by a bound introduced by this call\n   |\n   = help: the following other types implement trait `IsTransparentPixel`:\n             rgb::GrayAlpha<u16>\n             rgb::GrayAlpha<u8>\n             rgb::Rgba<u16>\n             rgb::Rgba<u8>\nnote: required by a bound in `is_opaque`\n  --> src/alpha.rs:37:52\n   |\n37 | pub fn is_opaque<T>(bitmap: &[T]) -> bool where T: IsTransparentPixel {\n   |                                                    ^^^^^^^^^^^^^^^^^^ required by this bound in `is_opaque`\n\n\n\nerror[E0599]: the method `to_image` exists for mutable reference `&mut [rgb::formats::rgba::Rgba<u8>]`, but its trait bounds were not satisfied\n   --> src/png.rs:73:29\n    |\n 73 |                         pal.to_image(profile, 1, ncolors, discard_alpha, meta.clone())\n    |                             ^^^^^^^^ method cannot be called on `&mut [rgb::formats::rgba::Rgba<u8>]` due to unsatisfied trait bounds\n    |\n   ::: src/image.rs:63:1\n    |\n 63 | pub struct Image {\n    | ---------------- doesn't satisfy `_: FromOptions<Img<Vec<Rgba<u8>>>>`\n    |\n   ::: /home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rgb-0.8.52/src/formats/rgba.rs:14:1\n    |\n 14 | pub struct Rgba<T, A = T> {\n    | ------------------------- doesn't satisfy `rgb::formats::rgba::Rgba<u8>: CopyAlpha<_>`, `rgb::formats::rgba::Rgba<u8>: LcmsPixelConversion` or `rgb::formats::rgba::Rgba<u8>: LcmsPixelFormat`\n    |\nnote: the following trait bounds were not satisfied:\n      `image::Image: FromOptions<Img<Vec<rgb::formats::rgba::Rgba<u8>>>>`\n      `rgb::formats::rgba::Rgba<u8>: CopyAlpha<_>`\n      `rgb::formats::rgba::Rgba<u8>: LcmsPixelConversion`\n      `rgb::formats::rgba::Rgba<u8>: LcmsPixelFormat`\n   --> src/convert.rs:68:14\n    |\n 67 | impl<T> ToSRGBImage for [T]\n    |         -----------     ---\n 68 |     where T: LcmsPixelFormat + LcmsPixelConversion,\n    |              ^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n    |              |\n    |              unsatisfied trait bound introduced here\n 69 |           T::Converted: LcmsPixelFormat + Default,\n    |                         ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                         |\n    |                         unsatisfied trait bound introduced here\n 70 |           T::ConvertedOpaque: LcmsPixelFormat + Default,\n    |                               ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                               |\n    |                               unsatisfied trait bound introduced here\n 71 |           Image: FromOptions<ImgVec<T>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 72 |           Image: FromOptions<ImgVec<T::Converted>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 73 |           Image: FromOptions<ImgVec<T::ConvertedOpaque>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 74 |           T: CopyAlpha<<T as LcmsPixelConversion>::Converted>\n    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\nnote: the trait `FromOptions` must be implemented\n   --> src/convert.rs:131:1\n    |\n131 | pub trait FromOptions<T> {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: items from traits can only be used if the trait is implemented and in scope\nnote: `ToSRGBImage` defines an item `to_image`, perhaps you need to implement it\n   --> src/convert.rs:45:1\n    |\n 45 | pub(crate) trait ToSRGBImage {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n\n\nerror[E0599]: the method `to_image` exists for struct `Vec<lodepng::Grey<u16>>`, but its trait bounds were not satisfied\n   --> src/jpeg.rs:39:78\n    |\n 39 |                 slice_u16.iter().copied().map(Grey::new).collect::<Vec<_>>().to_image(profile, width, height, true, meta)\n    |                                                                              ^^^^^^^^ method cannot be called on `Vec<lodepng::Grey<u16>>` due to unsatisfied trait bounds\n    |\n   ::: src/image.rs:63:1\n    |\n 63 | pub struct Image {\n    | ---------------- doesn't satisfy `_: FromOptions<Img<Vec<Grey<u16>>>>`\n    |\n   ::: /home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rgb-0.8.52/src/formats/gray.rs:7:1\n    |\n  7 | pub struct Gray_v08<T>(\n    | ---------------------- doesn't satisfy `lodepng::Grey<u16>: CopyAlpha<_>`, `lodepng::Grey<u16>: LcmsPixelConversion` or `lodepng::Grey<u16>: LcmsPixelFormat`\n    |\nnote: the following trait bounds were not satisfied:\n      `image::Image: FromOptions<Img<Vec<lodepng::Grey<u16>>>>`\n      `lodepng::Grey<u16>: CopyAlpha<_>`\n      `lodepng::Grey<u16>: LcmsPixelConversion`\n      `lodepng::Grey<u16>: LcmsPixelFormat`\n   --> src/convert.rs:68:14\n    |\n 67 | impl<T> ToSRGBImage for [T]\n    |         -----------     ---\n 68 |     where T: LcmsPixelFormat + LcmsPixelConversion,\n    |              ^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n    |              |\n    |              unsatisfied trait bound introduced here\n 69 |           T::Converted: LcmsPixelFormat + Default,\n    |                         ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                         |\n    |                         unsatisfied trait bound introduced here\n 70 |           T::ConvertedOpaque: LcmsPixelFormat + Default,\n    |                               ^^^^^^^^^^^^^^^   ^^^^^^^ unsatisfied trait bound introduced here\n    |                               |\n    |                               unsatisfied trait bound introduced here\n 71 |           Image: FromOptions<ImgVec<T>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 72 |           Image: FromOptions<ImgVec<T::Converted>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 73 |           Image: FromOptions<ImgVec<T::ConvertedOpaque>>,\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\n 74 |           T: CopyAlpha<<T as LcmsPixelConversion>::Converted>\n    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound introduced here\nnote: the trait `FromOptions` must be implemented\n   --> src/convert.rs:131:1\n    |\n131 | pub trait FromOptions<T> {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: items from traits can only be used if the trait is implemented and in scope\nnote: `ToSRGBImage` defines an item `to_image`, perhaps you need to implement it\n   --> src/convert.rs:45:1\n    |\n 45 | pub(crate) trait ToSRGBImage {\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n\n\nerror[E0594]: cannot assign to data in dereference of `rgb::GrayAlpha<u16>`\n  --> src/convert.rs:42:65\n   |\n42 | copy_alpha_impl!{ GRAYA8 => GRAYA16, |s:&GRAYA8,d:&mut GRAYA16|{d.a = u16::from(s.a) * 257} }\n   |                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot assign\n   |\n   = help: trait `DerefMut` is required to modify through a dereference, but it is not implemented for `rgb::GrayAlpha<u16>`\n\n\n\nerror[E0594]: cannot assign to data in dereference of `rgb::GrayAlpha<u16>`\n  --> src/convert.rs:43:67\n   |\n43 | copy_alpha_impl!{ GRAYA16 => GRAYA16, |s:&GRAYA16,d:&mut GRAYA16|{d.a = s.a} }\n   |                                                                   ^^^^^^^^^ cannot assign\n   |\n   = help: trait `DerefMut` is required to modify through a dereference, but it is not implemented for `rgb::GrayAlpha<u16>`\n\n"
+                  "error_message": "   Compiling proc-macro2 v1.0.103\n   Compiling unicode-ident v1.0.22\n   Compiling quote v1.0.42\n   Compiling autocfg v1.5.0\n   Compiling libc v0.2.178\n   Compiling crossbeam-utils v0.8.21\n   Compiling num-traits v0.2.19\n   Compiling syn v2.0.111\n    Checking crossbeam-epoch v0.9.18\n   Compiling rayon-core v1.13.0\n    Checking crossbeam-deque v0.8.6\n   Compiling jobserver v0.1.34\n    Checking num-integer v0.1.46\n   Compiling anyhow v1.0.100\n    Checking either v1.15.0\n    Checking memchr v2.7.6\n    Checking num-bigint v0.4.6\n    Checking stable_deref_trait v1.2.1\n   Compiling thiserror v2.0.17\n   Compiling shlex v1.3.0\n   Compiling find-msvc-tools v0.1.5\n    Checking arrayvec v0.7.6\n   Compiling log v0.4.29\n    Checking num-rational v0.4.2\n   Compiling nasm-rs v0.3.1\n   Compiling cc v1.2.49\n    Checking rayon v1.11.0\n    Checking as-slice v0.2.1\n   Compiling av-scenechange v0.14.1\n   Compiling built v0.8.0\n   Compiling paste v1.0.15\n    Checking aligned v0.4.3\n    Checking nom v8.0.0\n    Checking core2 v0.4.0\n    Checking y4m v0.8.0\n    Checking cfg-if v1.0.4\n   Compiling pastey v0.1.1\n    Checking maybe-rayon v0.1.1\n    Checking bitstream-io v4.9.0\n    Checking itertools v0.14.0\n   Compiling simd_helpers v0.1.0\n   Compiling noop_proc_macro v0.3.0\n    Checking imgref v1.12.0\n   Compiling rav1e v0.8.1\n    Checking new_debug_unreachable v1.0.6\n    Checking loop9 v0.1.5\n    Checking avif-serialize v0.8.6\n    Checking quick-error v2.0.1\n    Checking rgb v0.8.52\nerror: failed to run custom build command for `rav1e v0.8.1`\nnote: To improve backtraces for build dependencies, set the CARGO_PROFILE_DEV_BUILD_OVERRIDE_DEBUG=true environment variable to enable debug information generation.\n\nCaused by:\n  process didn't exit successfully: `/copter/staging/ravif-0.12.0/target/debug/build/rav1e-76ec4d03d41aff32/build-script-build` (exit status: 101)\n  --- stdout\n  cargo:rustc-cfg=nasm_x86_64\n\n  --- stderr\n\n  thread 'main' (6077) panicked at /cargo-cache/registry/src/index.crates.io-1949cf8c6b5b557f/rav1e-0.8.1/build.rs:144:9:\n  NASM build failed. Make sure you have nasm installed or disable the \"asm\" feature.\n  You can get NASM from https://nasm.us or your system's package manager.\n\n  error: Unable to run nasm: No such file or directory (os error 2)\n  stack backtrace:\n     0: __rustc::rust_begin_unwind\n     1: core::panicking::panic_fmt\n     2: build_script_build::build_nasm_files::{{closure}}\n     3: build_script_build::main\n  note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\nwarning: build failed, waiting for other jobs to finish...\n"
                 }
               ],
               "passed": false
@@ -143,5 +312,5 @@
       "transitive": []
     }
   ],
-  "total_dependents": 1
+  "total_dependents": 5
 }
