@@ -1003,6 +1003,14 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
         .map(|r| r.test.commands.iter().all(|c| c.result.passed))
         .unwrap_or(false);
 
+    // Get baseline version info for reporting
+    let baseline_version = baseline_row
+        .map(|r| r.primary.resolved_version.as_str())
+        .unwrap_or("?");
+    let baseline_spec = baseline_row
+        .map(|r| r.primary.spec.as_str())
+        .unwrap_or("?");
+
     // Analyze all offered versions
     let mut build_regressions: Vec<(&OfferedRow, &'static str)> = Vec::new();
     let mut test_regressions: Vec<&OfferedRow> = Vec::new();
@@ -1049,10 +1057,11 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
             let forced = row.offered.as_ref().map(|o| o.forced).unwrap_or(false);
             let forced_marker = if forced { " [forced]" } else { "" };
 
+            let baseline_info = format!("{}:{} ({})", base_crate, baseline_version, baseline_spec);
             let baseline_note = if baseline_test_passed {
-                "baseline passed"
+                format!("baseline {} passed", baseline_info)
             } else {
-                "baseline build passed, tests were already failing"
+                format!("baseline {} built, tests failed", baseline_info)
             };
 
             println!(
@@ -1073,9 +1082,10 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
             let forced = row.offered.as_ref().map(|o| o.forced).unwrap_or(false);
             let forced_marker = if forced { " [forced]" } else { "" };
 
+            let baseline_info = format!("{}:{} ({})", base_crate, baseline_version, baseline_spec);
             println!(
-                "REGRESSION: {} with {}:{}{} - tests failed (baseline tests passed)",
-                dep, base_crate, version, forced_marker
+                "REGRESSION: {} with {}:{}{} - tests failed (baseline {} passed)",
+                dep, base_crate, version, forced_marker, baseline_info
             );
             // Print first error line
             if let Some(error) = first_error_line(row) {
