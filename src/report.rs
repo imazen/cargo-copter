@@ -998,63 +998,99 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
         })
         .unwrap_or(false);
 
+    // Determine baseline test status (separate from build)
+    let baseline_test_passed = baseline_row
+        .map(|r| r.test.commands.iter().all(|c| c.result.passed))
+        .unwrap_or(false);
+
     // Analyze all offered versions
-    let mut all_passed = true;
-    let mut regressions: Vec<(&OfferedRow, &'static str)> = Vec::new();
+    let mut build_regressions: Vec<(&OfferedRow, &'static str)> = Vec::new();
+    let mut test_regressions: Vec<&OfferedRow> = Vec::new();
     let mut passed_versions: Vec<String> = Vec::new();
+    let mut still_broken: Vec<String> = Vec::new();
 
     for row in &results.offered_versions {
         let version = row.offered.as_ref().map(|o| o.version.as_str()).unwrap_or("?");
-        let version_display = format!("{}:{}", base_crate, version);
+        let forced = row.offered.as_ref().map(|o| o.forced).unwrap_or(false);
+        let version_display = if forced {
+            format!("{}:{} [forced]", base_crate, version)
+        } else {
+            format!("{}:{}", base_crate, version)
+        };
         let this_passed = row.test_passed();
 
         if this_passed {
             passed_versions.push(version_display);
         } else {
-            all_passed = false;
-            // Check for step-level regression
             let failed_step = failed_step_name(row);
-            // Traditional regression: baseline passed, offered failed
-            // Check-level regression: baseline check passed, offered check/fetch failed
-            let is_regression = baseline_passed || (baseline_check_passed && failed_step != "test");
 
-            if is_regression {
-                regressions.push((row, failed_step));
+            if failed_step == "build" || failed_step == "fetch" {
+                // BUILD/FETCH failure - this is a regression if baseline build passed
+                if baseline_check_passed {
+                    build_regressions.push((row, failed_step));
+                } else {
+                    still_broken.push(version_display);
+                }
+            } else {
+                // TEST failure - only a regression if baseline tests passed
+                if baseline_test_passed {
+                    test_regressions.push(row);
+                } else {
+                    still_broken.push(version_display);
+                }
             }
         }
     }
 
-    // Output the result
-    if all_passed && !results.offered_versions.is_empty() {
-        // All versions passed
-        println!("OK: {} - all versions passed ({})", dep, passed_versions.join(", "));
-    } else if !regressions.is_empty() {
-        // At least one regression
-        for (row, step) in &regressions {
+    // Output the results - prioritize build regressions
+    if !build_regressions.is_empty() {
+        for (row, step) in &build_regressions {
             let version = row.offered.as_ref().map(|o| o.version.as_str()).unwrap_or("?");
-            let version_display = format!("{}:{}", base_crate, version);
             let forced = row.offered.as_ref().map(|o| o.forced).unwrap_or(false);
             let forced_marker = if forced { " [forced]" } else { "" };
 
-            // Construct clear regression message
-            let reason = if baseline_passed {
-                format!("{} failed (baseline passed)", step)
+            let baseline_note = if baseline_test_passed {
+                "baseline passed"
             } else {
-                // Step-level regression: baseline check passed but offered failed earlier
-                format!("{} failed (baseline {} passed)", step, step)
+                "baseline build passed, tests were already failing"
             };
 
-            println!("REGRESSION: {} with {}{} - {}", dep, version_display, forced_marker, reason);
+            println!(
+                "REGRESSION: {} with {}:{}{} - {} failed ({})",
+                dep, base_crate, version, forced_marker, step, baseline_note
+            );
         }
-    } else if !baseline_passed {
-        // Baseline failed
+    }
+
+    // Test regressions (less critical than build regressions)
+    if !test_regressions.is_empty() {
+        for row in &test_regressions {
+            let version = row.offered.as_ref().map(|o| o.version.as_str()).unwrap_or("?");
+            let forced = row.offered.as_ref().map(|o| o.forced).unwrap_or(false);
+            let forced_marker = if forced { " [forced]" } else { "" };
+
+            println!(
+                "REGRESSION: {} with {}:{}{} - tests failed (baseline tests passed)",
+                dep, base_crate, version, forced_marker
+            );
+        }
+    }
+
+    // Report passed versions
+    if !passed_versions.is_empty() {
+        println!("OK: {} - passed with {}", dep, passed_versions.join(", "));
+    }
+
+    // Report still broken (not regressions, baseline was already failing at same level)
+    if !still_broken.is_empty() && build_regressions.is_empty() && test_regressions.is_empty() {
+        // Only mention if no regressions to avoid noise
+        println!("STILL BROKEN: {} with {} (same failure as baseline)", dep, still_broken.join(", "));
+    }
+
+    // If baseline failed and no offered versions
+    if results.offered_versions.is_empty() && !baseline_passed {
         let step = baseline_row.map(failed_step_name).unwrap_or("unknown");
-        println!("BASELINE FAILED: {} (failed at {})", dep, step);
-    } else if results.offered_versions.is_empty() {
-        // No offered versions (baseline only)
-        if baseline_passed {
-            println!("OK: {} - baseline passed", dep);
-        }
+        println!("BASELINE FAILED: {} ({} failed)", dep, step);
     }
 }
 
