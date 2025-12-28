@@ -95,6 +95,7 @@ mod tests {
                 original_requirement: None,
                 all_crate_versions: vec![],
                 patch_depth: crate::compile::PatchDepth::None,
+                blocking_crates: vec![],
             },
             baseline: None, // Baseline has no comparison
         };
@@ -126,6 +127,7 @@ mod tests {
                 original_requirement: None,
                 all_crate_versions: vec![],
                 patch_depth: crate::compile::PatchDepth::None,
+                blocking_crates: vec![],
             },
             baseline: Some(BaselineComparison {
                 baseline_passed: true,
@@ -162,6 +164,7 @@ mod tests {
                 original_requirement: None,
                 all_crate_versions: vec![],
                 patch_depth: crate::compile::PatchDepth::None,
+                blocking_crates: vec![],
             },
             baseline: Some(BaselineComparison {
                 baseline_passed: true, // Baseline passed
@@ -221,6 +224,7 @@ mod tests {
                 original_requirement: None,
                 all_crate_versions: vec![],
                 patch_depth: crate::compile::PatchDepth::None,
+                blocking_crates: vec![],
             },
             baseline: Some(BaselineComparison {
                 baseline_passed: false, // Overall baseline failed (test failed)

@@ -71,6 +71,7 @@ mod tests {
                 original_requirement: Some(req.to_string()),
                 all_crate_versions: vec![],
                 patch_depth: PatchDepth::None,
+                blocking_crates: vec![],
             },
             baseline: None, // This IS the baseline
         }
@@ -97,6 +98,7 @@ mod tests {
                 original_requirement: None, // No requirement provided
                 all_crate_versions: vec![],
                 patch_depth: PatchDepth::None,
+                blocking_crates: vec![],
             },
             baseline: None,
         }
@@ -123,6 +125,7 @@ mod tests {
                 original_requirement: Some("^0.8.0".to_string()),
                 all_crate_versions: vec![],
                 patch_depth: PatchDepth::None,
+                blocking_crates: vec![],
             },
             baseline: None, // No baseline comparison = this IS the baseline
         }
@@ -149,6 +152,7 @@ mod tests {
                 original_requirement: Some("^0.8.0".to_string()),
                 all_crate_versions: vec![],
                 patch_depth: PatchDepth::None,
+                blocking_crates: vec![],
             },
             baseline: Some(BaselineComparison {
                 baseline_passed: true,
