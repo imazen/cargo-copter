@@ -239,6 +239,37 @@ impl ThreeStepResult {
             && self.test.as_ref().is_none_or(|t| t.success)
     }
 
+    /// Validate internal consistency of the result.
+    ///
+    /// # Panics (debug only)
+    ///
+    /// Panics if:
+    /// - Fetch failed but check or test is Some
+    /// - Check failed but test is Some
+    #[inline]
+    pub fn debug_assert_consistent(&self) {
+        // INVARIANT: If fetch failed, check and test must be None
+        debug_assert!(
+            self.fetch.success || (self.check.is_none() && self.test.is_none()),
+            "Invariant violated: fetch failed but check/test is Some. \
+             fetch.success={}, check.is_some={}, test.is_some={}",
+            self.fetch.success,
+            self.check.is_some(),
+            self.test.is_some()
+        );
+
+        // INVARIANT: If check failed, test must be None
+        if let Some(ref check) = self.check {
+            debug_assert!(
+                check.success || self.test.is_none(),
+                "Invariant violated: check failed but test is Some. \
+                 check.success={}, test.is_some={}",
+                check.success,
+                self.test.is_some()
+            );
+        }
+    }
+
     /// Get the first step that failed, if any
     pub fn first_failure(&self) -> Option<CompileStep> {
         if !self.fetch.success {

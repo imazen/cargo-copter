@@ -70,7 +70,20 @@ pub fn test_result_to_offered_row(result: &TestResult) -> OfferedRow {
         })
         .collect();
 
-    OfferedRow { baseline_passed, primary, offered, test, transitive }
+    let row = OfferedRow { baseline_passed, primary, offered, test, transitive };
+
+    // INVARIANT: Baseline rows have offered=None and baseline_passed=None
+    // Non-baseline rows have offered=Some and baseline_passed=Some
+    debug_assert!(
+        (row.offered.is_none() && row.baseline_passed.is_none())
+            || (row.offered.is_some() && row.baseline_passed.is_some()),
+        "Invariant violated: offered/baseline_passed inconsistency. \
+         offered.is_some={}, baseline_passed.is_some={}",
+        row.offered.is_some(),
+        row.baseline_passed.is_some()
+    );
+
+    row
 }
 
 /// Convert ThreeStepResult to TestCommand list

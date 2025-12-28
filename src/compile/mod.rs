@@ -144,7 +144,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
 
     // Early stop if fetch failed
     if !fetch_result.success {
-        return Ok(ThreeStepResult {
+        let result = ThreeStepResult {
             fetch: fetch_result,
             check: None,
             test: None,
@@ -155,7 +155,9 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
             original_requirement,
             all_crate_versions,
             blocking_crates: vec![],
-        });
+        };
+        result.debug_assert_consistent();
+        return Ok(result);
     }
 
     // Step 2: Check (unless skipped)
@@ -169,7 +171,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
     if let Some(ref check) = check_result
         && !check.success
     {
-        return Ok(ThreeStepResult {
+        let result = ThreeStepResult {
             fetch: fetch_result,
             check: check_result,
             test: None,
@@ -180,7 +182,9 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
             original_requirement,
             all_crate_versions,
             blocking_crates: vec![],
-        });
+        };
+        result.debug_assert_consistent();
+        return Ok(result);
     }
 
     // Step 3: Test (unless skipped)
@@ -190,7 +194,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         Some(executor::run_cargo_step_with_env(CompileStep::Test, &config.dependent_path, &config.features, &env_vars))
     };
 
-    Ok(ThreeStepResult {
+    let result = ThreeStepResult {
         fetch: fetch_result,
         check: check_result,
         test: test_result,
@@ -201,7 +205,12 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         original_requirement,
         all_crate_versions,
         blocking_crates: vec![],
-    })
+    };
+
+    // INVARIANT: Result must be internally consistent
+    result.debug_assert_consistent();
+
+    Ok(result)
 }
 
 /// Determine the patching strategy based on configuration.

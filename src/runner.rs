@@ -16,6 +16,10 @@ where
 {
     debug!("Starting test execution for {} test pairs", matrix.test_count());
 
+    // INVARIANT: Exactly one baseline version must exist
+    let baseline_count = matrix.base_versions.iter().filter(|v| v.is_baseline).count();
+    debug_assert!(baseline_count == 1, "Invariant violated: expected exactly 1 baseline, found {}", baseline_count);
+
     // Step 1: Resolve base version Latest entries (just a few, so do upfront)
     for base_spec in &mut matrix.base_versions {
         if let Version::Latest = base_spec.crate_ref.version {
