@@ -1050,18 +1050,21 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
 
             if failed_step == "build" || failed_step == "fetch" {
                 // BUILD/FETCH failure - this is a regression if baseline build passed
+                // Even if baseline tests failed, a check failure is a regression
                 if baseline_check_passed {
                     build_regressions.push((row, failed_step));
                 } else {
+                    // Only "still broken" if baseline check also failed
                     still_broken.push(version_display);
                 }
             } else {
                 // TEST failure - only a regression if baseline tests passed
+                // If baseline tests also failed, just don't report (not broken, not regression)
                 if baseline_test_passed {
                     test_regressions.push(row);
-                } else {
-                    still_broken.push(version_display);
                 }
+                // Note: if baseline tests failed and new version tests also failed,
+                // we don't report it as "still broken" - that term is reserved for check failures
             }
         }
     }
@@ -1153,10 +1156,10 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
         }
     }
 
-    // Report still broken (not regressions, baseline was already failing at same level)
+    // Report still broken (baseline check failed, new version check also failed)
     if !still_broken.is_empty() && build_regressions.is_empty() && test_regressions.is_empty() {
         // Only mention if no regressions to avoid noise
-        println!("STILL BROKEN: {} with {} (same failure as baseline)", dep, still_broken.join(", "));
+        println!("BROKEN: {} with {} (baseline check also failed)", dep, still_broken.join(", "));
     }
 
     // If baseline failed and no offered versions
@@ -1365,8 +1368,10 @@ pub fn print_simple_summary(rows: &[OfferedRow], report_dir: &Path, base_crate: 
                     .all(|c| c.result.passed);
                 if check_passed {
                     baseline_check_passed_deps.insert(row.primary.dependent_name.clone());
+                } else {
+                    // Only "broken" if check/fetch failed, not just test failures
+                    broken_already.push(dep);
                 }
-                broken_already.push(dep);
             }
         }
     }
