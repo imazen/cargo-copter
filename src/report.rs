@@ -990,6 +990,8 @@ pub fn print_simple_header(base_crate: &str, display_version: &str, dependents: 
     println!("Dependents: {}", dependents.join(", "));
     println!("Versions to test: {}", base_versions.join(", "));
     println!();
+    println!("Markers: [!] forced  [!!] auto-patched  [!!!] deep conflict (see blocking deps)");
+    println!();
 }
 
 /// Collect results for a dependent and print when complete
