@@ -95,9 +95,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
     };
 
     // Apply patch if needed
-    if should_modify_toml
-        && let Some(ref override_path) = config.override_path
-    {
+    if should_modify_toml && let Some(ref override_path) = config.override_path {
         patching::apply_patch_crates_io(&cargo_toml_path, &config.base_crate, override_path)
             .map_err(|e| format!("Failed to apply patch: {}", e))?;
     }
