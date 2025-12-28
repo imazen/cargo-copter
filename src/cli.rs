@@ -93,16 +93,14 @@ pub struct CliArgs {
     #[arg(long)]
     pub docker: bool,
 
-    /// Patch transitive dependencies when using --force-versions
+    /// [DEPRECATED] Patch transitive dependencies when using --force-versions
     ///
-    /// Adds [patch.crates-io] to the dependent's Cargo.toml to unify versions
-    /// across the dependency tree. Only effective with --force-versions because:
-    /// - Non-forced tests already use transitive patching via --config
-    /// - [patch.crates-io] only affects semver-compatible transitive deps
+    /// DEPRECATED: Auto-retry now handles this automatically. When --force-versions
+    /// encounters a "multiple versions of crate" error, it automatically retries
+    /// with [patch.crates-io] applied. See the `!!` marker in output.
     ///
-    /// Use when: forcing a version that's semver-compatible with transitive deps
-    /// but incompatible with the direct dep (e.g., exact version pins).
-    #[arg(long, requires = "force_versions")]
+    /// This flag is kept for backwards compatibility but is no longer needed.
+    #[arg(long, requires = "force_versions", hide = true)]
     pub patch_transitive: bool,
 
     /// Use simple, verbal output format instead of table

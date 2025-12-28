@@ -1,4 +1,4 @@
-use crate::error_extract::{Diagnostic, parse_cargo_json};
+use crate::error_extract::{Diagnostic, extract_crates_needing_patch, has_multiple_version_conflict, parse_cargo_json};
 use crate::metadata;
 use fs2::FileExt;
 use lazy_static::lazy_static;
@@ -662,6 +662,37 @@ impl VersionSource {
     }
 }
 
+/// Depth of patching applied to resolve version conflicts
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum PatchDepth {
+    /// No patching - natural resolution or simple force mode
+    #[default]
+    None,
+    /// Force mode only - direct dependency spec replaced (!)
+    Force,
+    /// Patch retry - [patch.crates-io] added after multi-version error (!!)
+    Patch,
+    /// Deep patch - recursive transitive patching after Patch still failed (!!!)
+    DeepPatch,
+}
+
+impl PatchDepth {
+    /// Get marker suffix for display
+    pub fn marker(&self) -> &'static str {
+        match self {
+            PatchDepth::None => "",
+            PatchDepth::Force => "!",
+            PatchDepth::Patch => "!!",
+            PatchDepth::DeepPatch => "!!!",
+        }
+    }
+
+    /// Check if any patching was applied
+    pub fn is_patched(&self) -> bool {
+        !matches!(self, PatchDepth::None)
+    }
+}
+
 /// Three-step ICT (Install/Check/Test) result for a single version
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ThreeStepResult {
@@ -681,6 +712,8 @@ pub struct ThreeStepResult {
     pub original_requirement: Option<String>,
     /// All versions of the tested crate found in the dependency tree (for multi-version scenarios)
     pub all_crate_versions: Vec<(String, String, String)>, // (spec, resolved_version, dependent_name)
+    /// Depth of patching applied to resolve version conflicts
+    pub patch_depth: PatchDepth,
 }
 
 impl ThreeStepResult {
@@ -987,6 +1020,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
             forced_version: force_versions,
             original_requirement,
             all_crate_versions: vec![],
+            patch_depth: if force_versions { PatchDepth::Force } else { PatchDepth::None },
         });
     }
 
@@ -1009,6 +1043,113 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                 );
             }
 
+            // Check failed - try auto-retry with [patch.crates-io] if it's a multi-version conflict
+            let combined_output = format!("{}\n{}", result.stdout, result.stderr);
+            if force_versions && has_multiple_version_conflict(&combined_output) {
+                debug!("Multi-version conflict detected, attempting auto-retry with [patch.crates-io]");
+
+                // Restore Cargo.toml and apply both force AND patch.crates-io
+                restore_cargo_toml(crate_path)?;
+
+                // Delete Cargo.lock again for fresh resolution
+                let lock_file = crate_path.join("Cargo.lock");
+                if lock_file.exists() {
+                    let _ = fs::remove_file(&lock_file);
+                }
+
+                // Apply force override
+                if let Some(override_path) = override_path {
+                    apply_dependency_override(
+                        crate_path,
+                        base_crate_name,
+                        override_path,
+                        DependencyOverrideMode::Force,
+                    )?;
+                    // Also apply [patch.crates-io] for transitive deps
+                    apply_patch_crates_io(crate_path, base_crate_name, override_path)?;
+                    debug!("Applied FORCE + [patch.crates-io] for auto-retry");
+                }
+
+                // Retry fetch and check
+                let retry_fetch = compile_crate(crate_path, CompileStep::Fetch, None)?;
+                if retry_fetch.success {
+                    let retry_check = compile_crate(crate_path, CompileStep::Check, None)?;
+                    if retry_check.success {
+                        // Auto-retry succeeded! Continue with test step
+                        debug!("Auto-retry with [patch.crates-io] succeeded!");
+
+                        // Run test if not skipped
+                        let test =
+                            if !skip_test { Some(compile_crate(crate_path, CompileStep::Test, None)?) } else { None };
+
+                        // Log test failure if needed
+                        if let Some(ref test_result) = test
+                            && test_result.failed()
+                            && let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label)
+                        {
+                            log_failure_with_diagnostics(
+                                dep_info.name,
+                                dep_info.version,
+                                base_crate_name,
+                                label,
+                                "cargo test",
+                                None,
+                                &test_result.stdout,
+                                &test_result.stderr,
+                                &test_result.diagnostics,
+                            );
+                        }
+
+                        // Cleanup and return success with Patch depth
+                        restore_cargo_toml(crate_path).ok();
+                        let all_crate_versions = extract_all_crate_versions(crate_path, base_crate_name);
+
+                        return Ok(ThreeStepResult {
+                            fetch: retry_fetch,
+                            check: Some(retry_check),
+                            test,
+                            actual_version: verify_dependency_version(crate_path, base_crate_name),
+                            expected_version: expected_version.clone(),
+                            forced_version: true,
+                            original_requirement: original_requirement.clone(),
+                            all_crate_versions,
+                            patch_depth: PatchDepth::Patch, // !! marker
+                        });
+                    }
+                    // Retry check also failed - check if still multi-version conflict
+                    let retry_output = format!("{}\n{}", retry_check.stdout, retry_check.stderr);
+                    let still_multi_version = has_multiple_version_conflict(&retry_output);
+
+                    // Extract blocking crates for !!! case
+                    let blocking_crates = if still_multi_version {
+                        let crates = extract_crates_needing_patch(&retry_output, base_crate_name);
+                        debug!("Auto-retry still has multi-version conflict - blocking crates: {:?}", crates);
+                        // Convert to all_crate_versions format: (spec, version, crate_name)
+                        crates.into_iter().map(|c| ("blocking".to_string(), "?".to_string(), c)).collect()
+                    } else {
+                        debug!("Auto-retry check failed with different error");
+                        vec![]
+                    };
+
+                    restore_cargo_toml(crate_path).ok();
+                    return Ok(ThreeStepResult {
+                        fetch: retry_fetch,
+                        check: Some(retry_check),
+                        test: None,
+                        actual_version: actual_version.clone(),
+                        expected_version: expected_version.clone(),
+                        forced_version: true,
+                        original_requirement: original_requirement.clone(),
+                        all_crate_versions: blocking_crates,
+                        // !!! if still multi-version (deep transitive issue), !! otherwise
+                        patch_depth: if still_multi_version { PatchDepth::DeepPatch } else { PatchDepth::Patch },
+                    });
+                }
+                // Retry fetch failed - return original failure
+                debug!("Auto-retry fetch failed");
+                restore_cargo_toml(crate_path).ok();
+            }
+
             // Check failed - stop here with dash for test
             return Ok(ThreeStepResult {
                 fetch,
@@ -1019,6 +1160,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                 forced_version: force_versions,
                 original_requirement: original_requirement.clone(),
                 all_crate_versions: vec![],
+                patch_depth: if force_versions { PatchDepth::Force } else { PatchDepth::None },
             });
         }
         Some(result)
@@ -1065,6 +1207,15 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
     let all_crate_versions =
         if fetch.success { extract_all_crate_versions(crate_path, base_crate_name) } else { vec![] };
 
+    // Determine patch depth based on mode
+    let patch_depth = if force_versions && patch_transitive {
+        PatchDepth::Patch // Force + explicit patch_transitive = !!
+    } else if force_versions {
+        PatchDepth::Force // Force only = !
+    } else {
+        PatchDepth::None // Natural resolution
+    };
+
     Ok(ThreeStepResult {
         fetch,
         check,
@@ -1074,6 +1225,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         forced_version: force_versions,
         original_requirement,
         all_crate_versions,
+        patch_depth,
     })
 }
 

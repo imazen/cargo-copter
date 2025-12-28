@@ -39,7 +39,11 @@ pub fn test_result_to_offered_row(result: &TestResult) -> OfferedRow {
     let offered = if is_baseline {
         None
     } else {
-        Some(OfferedVersion { version: base_version_str.clone(), forced: result.execution.forced_version })
+        Some(OfferedVersion {
+            version: base_version_str.clone(),
+            forced: result.execution.forced_version,
+            patch_depth: result.execution.patch_depth,
+        })
     };
 
     // Get baseline_passed (None for baseline itself)

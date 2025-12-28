@@ -1,0 +1,9 @@
+[package]
+name = "transitive-depth-4"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+transitive-depth-3 = { path = "../transitive-depth-3" }
