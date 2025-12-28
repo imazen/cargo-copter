@@ -1024,6 +1024,9 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
     let mut passed_versions: Vec<String> = Vec::new();
     let mut still_broken: Vec<String> = Vec::new();
 
+    // Track versions that needed special patching for explanations
+    let mut patch_explanations: Vec<(String, crate::compile::PatchDepth)> = Vec::new();
+
     for row in &results.offered_versions {
         let version = row.offered.as_ref().map(|o| o.version.as_str()).unwrap_or("?");
         let patch_depth = row.offered.as_ref().map(|o| o.patch_depth).unwrap_or_default();
@@ -1036,7 +1039,12 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
         let this_passed = row.test_passed();
 
         if this_passed {
-            passed_versions.push(version_display);
+            passed_versions.push(version_display.clone());
+            // Track if patching was needed for explanation
+            if patch_depth == crate::compile::PatchDepth::Patch || patch_depth == crate::compile::PatchDepth::DeepPatch
+            {
+                patch_explanations.push((version.to_string(), patch_depth));
+            }
         } else {
             let failed_step = failed_step_name(row);
 
@@ -1081,6 +1089,13 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
             if let Some(error) = first_error_line(row) {
                 println!("  {}", error);
             }
+            // Explain what patching was attempted for [!!] cases
+            if patch_depth == crate::compile::PatchDepth::Patch {
+                println!(
+                    "  [!!] Tried [patch.crates-io] to unify transitive {} versions, but build still failed",
+                    base_crate
+                );
+            }
             // Print blocking crates advice for !!! cases
             print_blocking_crates_advice(row, base_crate, version);
         }
@@ -1103,6 +1118,13 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
             if let Some(error) = first_error_line(row) {
                 println!("  {}", error);
             }
+            // Explain what patching was attempted for [!!] cases
+            if patch_depth == crate::compile::PatchDepth::Patch {
+                println!(
+                    "  [!!] Used [patch.crates-io] to unify transitive {} versions, but tests still failed",
+                    base_crate
+                );
+            }
             // Print blocking crates advice for !!! cases
             print_blocking_crates_advice(row, base_crate, version);
         }
@@ -1111,6 +1133,24 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
     // Report passed versions
     if !passed_versions.is_empty() {
         println!("OK: {} - passed with {}", dep, passed_versions.join(", "));
+        // Explain what patching was needed for [!!] and [!!!] cases
+        for (version, depth) in &patch_explanations {
+            match depth {
+                crate::compile::PatchDepth::Patch => {
+                    println!(
+                        "  [!!] {}:{} needed [patch.crates-io] to unify transitive {} versions",
+                        base_crate, version, base_crate
+                    );
+                }
+                crate::compile::PatchDepth::DeepPatch => {
+                    println!(
+                        "  [!!!] {}:{} has deep transitive conflicts even with [patch.crates-io]",
+                        base_crate, version
+                    );
+                }
+                _ => {}
+            }
+        }
     }
 
     // Report still broken (not regressions, baseline was already failing at same level)
