@@ -1,4 +1,4 @@
-use crate::error_extract::{Diagnostic, has_multiple_version_conflict, parse_cargo_json};
+use crate::error_extract::{Diagnostic, extract_crates_needing_patch, has_multiple_version_conflict, parse_cargo_json};
 use crate::metadata;
 use fs2::FileExt;
 use lazy_static::lazy_static;
@@ -1116,8 +1116,21 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                             patch_depth: PatchDepth::Patch, // !! marker
                         });
                     }
-                    // Retry check also failed - return the retry result
-                    debug!("Auto-retry check still failed");
+                    // Retry check also failed - check if still multi-version conflict
+                    let retry_output = format!("{}\n{}", retry_check.stdout, retry_check.stderr);
+                    let still_multi_version = has_multiple_version_conflict(&retry_output);
+
+                    // Extract blocking crates for !!! case
+                    let blocking_crates = if still_multi_version {
+                        let crates = extract_crates_needing_patch(&retry_output, base_crate_name);
+                        debug!("Auto-retry still has multi-version conflict - blocking crates: {:?}", crates);
+                        // Convert to all_crate_versions format: (spec, version, crate_name)
+                        crates.into_iter().map(|c| ("blocking".to_string(), "?".to_string(), c)).collect()
+                    } else {
+                        debug!("Auto-retry check failed with different error");
+                        vec![]
+                    };
+
                     restore_cargo_toml(crate_path).ok();
                     return Ok(ThreeStepResult {
                         fetch: retry_fetch,
@@ -1127,8 +1140,9 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                         expected_version: expected_version.clone(),
                         forced_version: true,
                         original_requirement: original_requirement.clone(),
-                        all_crate_versions: vec![],
-                        patch_depth: PatchDepth::Patch, // !! marker - attempted but still failed
+                        all_crate_versions: blocking_crates,
+                        // !!! if still multi-version (deep transitive issue), !! otherwise
+                        patch_depth: if still_multi_version { PatchDepth::DeepPatch } else { PatchDepth::Patch },
                     });
                 }
                 // Retry fetch failed - return original failure
