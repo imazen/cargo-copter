@@ -247,6 +247,7 @@ pub fn detect_multiple_version_conflicts(output: &str) -> Vec<MultipleVersionsCo
 /// Check if an error output contains "multiple versions" conflict
 pub fn has_multiple_version_conflict(output: &str) -> bool {
     output.contains("there are multiple different versions of crate")
+        || output.contains("two different versions of crate")
 }
 
 /// Extract the list of crates that need patching to resolve a multi-version conflict
