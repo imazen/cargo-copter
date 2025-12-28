@@ -1079,6 +1079,8 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
             if let Some(error) = first_error_line(row) {
                 println!("  {}", error);
             }
+            // Print blocking crates advice for !!! cases
+            print_blocking_crates_advice(row, base_crate, version);
         }
     }
 
@@ -1099,6 +1101,8 @@ pub fn print_simple_dependent_result(results: &DependentResults, base_crate: &st
             if let Some(error) = first_error_line(row) {
                 println!("  {}", error);
             }
+            // Print blocking crates advice for !!! cases
+            print_blocking_crates_advice(row, base_crate, version);
         }
     }
 
@@ -1165,6 +1169,79 @@ fn first_error_line(row: &OfferedRow) -> Option<String> {
         }
     }
     None
+}
+
+/// Print blocking crates advice for DeepPatch (!!!) cases
+/// Shows which transitive dependencies are preventing version unification
+fn print_blocking_crates_advice(row: &OfferedRow, base_crate: &str, base_version: &str) {
+    // Check if this is a DeepPatch case
+    let patch_depth = row.offered.as_ref().map(|o| o.patch_depth).unwrap_or_default();
+    if patch_depth != crate::compile::PatchDepth::DeepPatch {
+        return;
+    }
+
+    // Extract blocking crates from transitive deps with conflicting specs
+    // The transitive field contains deps that use different versions
+    if row.transitive.is_empty() {
+        // Try to extract from error message if no transitive data
+        for cmd in &row.test.commands {
+            if !cmd.result.passed {
+                for failure in &cmd.result.failures {
+                    // Look for "two different versions of crate X" pattern
+                    if failure.error_message.contains("two different versions of crate")
+                        || failure.error_message.contains("multiple different versions of crate")
+                    {
+                        // Extract major.minor for recommendation
+                        let parts: Vec<&str> = base_version.split('.').collect();
+                        let major_minor = if parts.len() >= 2 {
+                            format!("{}.{}", parts[0], parts[1])
+                        } else {
+                            base_version.to_string()
+                        };
+
+                        println!("  BLOCKING TRANSITIVE DEPS (need semver-compatible {} specs):", base_crate);
+                        println!("    Recommend: Change restrictive specs (like =X.Y.Z) to ^{}", major_minor);
+                        println!("    For forward compat: Use >={} instead of exact version pins", major_minor);
+                        return;
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    // We have transitive dep info - show which crates are blocking
+    println!("  BLOCKING TRANSITIVE DEPS:");
+    for transitive in &row.transitive {
+        let spec = &transitive.dependency.spec;
+        let resolved = &transitive.dependency.resolved_version;
+        let dep_name = &transitive.dependency.dependent_name;
+
+        // Check if this spec is restrictive (exact pin, incompatible range)
+        let is_restrictive = spec.starts_with('=') || spec.starts_with('<');
+
+        if is_restrictive || transitive.dependency.resolved_version != base_version {
+            // Extract major.minor from base_version
+            let parts: Vec<&str> = base_version.split('.').collect();
+            let major_minor =
+                if parts.len() >= 2 { format!("{}.{}", parts[0], parts[1]) } else { base_version.to_string() };
+
+            let recommendation = if spec.starts_with('=') {
+                format!("^{} (for backward compat) or >={} (for forward compat)", major_minor, major_minor)
+            } else if spec.starts_with('~') {
+                format!("^{} (allows more flexibility)", major_minor)
+            } else if spec.starts_with('<') {
+                format!(">={} with adjusted upper bound", major_minor)
+            } else {
+                format!("^{}", major_minor)
+            };
+
+            println!(
+                "    {} requires {} {} → resolved {} (recommend: {})",
+                dep_name, base_crate, spec, resolved, recommendation
+            );
+        }
+    }
 }
 
 /// Write combined log file with all failures
