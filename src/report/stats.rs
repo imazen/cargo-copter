@@ -25,12 +25,28 @@ pub fn summarize_offered_rows(rows: &[OfferedRow]) -> TestSummary {
         if row.offered.is_some() {
             let overall_passed = row.test.commands.iter().all(|cmd| cmd.result.passed);
 
-            match (row.baseline_passed, overall_passed) {
-                (Some(true), true) => passed += 1,     // PASSED
-                (Some(true), false) => regressed += 1, // REGRESSED
-                (Some(false), _) => broken += 1,       // BROKEN
-                (None, true) => passed += 1,           // PASSED (no baseline)
-                (None, false) => broken += 1,          // FAILED (no baseline)
+            // Use baseline_check_passed to determine if truly broken (check fails)
+            // Only consider baseline "broken" if check fails - test failures don't count
+            let baseline_compiles = row
+                .baseline_check_passed
+                .unwrap_or_else(|| row.baseline_passed.unwrap_or(false));
+
+            match (baseline_compiles, row.baseline_passed, overall_passed) {
+                // Baseline doesn't compile = truly broken
+                (false, _, _) => broken += 1,
+                // Baseline compiles AND passed overall, this passed = PASSED
+                (true, Some(true), true) => passed += 1,
+                // Baseline compiles AND passed overall, this failed = REGRESSED
+                (true, Some(true), false) => regressed += 1,
+                // Baseline compiles but test failed, this passed = PASSED
+                (true, Some(false), true) => passed += 1,
+                // Baseline compiles but test failed, this also failed = not a regression
+                // (test was already failing, count as passed since compilation works)
+                (true, Some(false), false) => passed += 1,
+                // No baseline comparison data, this passed = PASSED
+                (true, None, true) => passed += 1,
+                // No baseline comparison data, this failed = BROKEN (can't determine)
+                (true, None, false) => broken += 1,
             }
         }
     }

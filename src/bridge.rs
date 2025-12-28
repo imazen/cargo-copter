@@ -49,6 +49,9 @@ pub fn test_result_to_offered_row(result: &TestResult) -> OfferedRow {
     // Get baseline_passed (None for baseline itself)
     let baseline_passed = result.baseline.as_ref().map(|b| b.baseline_passed);
 
+    // Get baseline_check_passed (None for baseline itself, or if check was skipped)
+    let baseline_check_passed = result.baseline.as_ref().and_then(|b| b.baseline_check_passed);
+
     // Convert ThreeStepResult to TestExecution
     let test = TestExecution { commands: three_step_to_commands(&result.execution) };
 
@@ -70,7 +73,7 @@ pub fn test_result_to_offered_row(result: &TestResult) -> OfferedRow {
         })
         .collect();
 
-    let row = OfferedRow { baseline_passed, primary, offered, test, transitive };
+    let row = OfferedRow { baseline_passed, baseline_check_passed, primary, offered, test, transitive };
 
     // INVARIANT: Baseline rows have offered=None and baseline_passed=None
     // Non-baseline rows have offered=Some and baseline_passed=Some

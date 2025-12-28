@@ -147,6 +147,7 @@ mod tests {
         let offered = OfferedVersion {
             version: "0.8.52".to_string(),
             forced: true,
+            patch_depth: crate::compile::PatchDepth::Force,
         };
 
         let json = serde_json::to_string(&offered).unwrap();
@@ -202,6 +203,7 @@ mod tests {
         // Baseline row (no offered version)
         let row = OfferedRow {
             baseline_passed: None,
+            baseline_check_passed: None,
             primary: DependencyRef {
                 dependent_name: "test-dep".to_string(),
                 dependent_version: "1.0.0".to_string(),
@@ -221,6 +223,7 @@ mod tests {
         let deserialized: OfferedRow = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.baseline_passed, None);
+        assert_eq!(deserialized.baseline_check_passed, None);
         assert_eq!(deserialized.offered, None);
         assert_eq!(deserialized.primary.dependent_name, "test-dep");
     }
@@ -230,6 +233,7 @@ mod tests {
         // Row with offered version
         let row = OfferedRow {
             baseline_passed: Some(true),
+            baseline_check_passed: Some(true),
             primary: DependencyRef {
                 dependent_name: "test-dep".to_string(),
                 dependent_version: "1.0.0".to_string(),
@@ -241,6 +245,7 @@ mod tests {
             offered: Some(OfferedVersion {
                 version: "0.8.52".to_string(),
                 forced: false,
+                patch_depth: crate::compile::PatchDepth::Patch,
             }),
             test: TestExecution {
                 commands: vec![
@@ -271,6 +276,7 @@ mod tests {
         // Complex row with everything
         let row = OfferedRow {
             baseline_passed: Some(true),
+            baseline_check_passed: Some(true),
             primary: DependencyRef {
                 dependent_name: "complex-dep".to_string(),
                 dependent_version: "2.1.0".to_string(),
@@ -282,6 +288,7 @@ mod tests {
             offered: Some(OfferedVersion {
                 version: "0.8.52".to_string(),
                 forced: true,
+                patch_depth: crate::compile::PatchDepth::Force,
             }),
             test: TestExecution {
                 commands: vec![
