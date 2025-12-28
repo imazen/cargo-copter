@@ -3,7 +3,7 @@
 //! This module handles all modifications to Cargo.toml files, including:
 //! - Backup and restore of original files
 //! - Adding `[patch.crates-io]` sections
-//! - Modifying dependency specifications
+//! - Modifying dependency specifications (force mode)
 //!
 //! # Safety
 //!
@@ -14,6 +14,7 @@
 //! 4. Restore from backup (even on failure)
 
 use log::debug;
+use std::env;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -118,6 +119,89 @@ pub fn apply_patch_crates_io(cargo_toml_path: &Path, crate_name: &str, patch_pat
     file.flush()?;
 
     debug!("Applied patch to {:?}", cargo_toml_path);
+    Ok(())
+}
+
+/// Apply a dependency override to Cargo.toml - Force mode.
+///
+/// This replaces the dependency specification directly with a path override,
+/// bypassing semver requirements. Unlike `apply_patch_crates_io`, this modifies
+/// the direct dependency entry rather than adding a patch section.
+///
+/// # Arguments
+/// * `cargo_toml_path` - Path to the Cargo.toml to modify
+/// * `dep_name` - Name of the dependency to override
+/// * `override_path` - Local path to use for the override
+///
+/// # Preserved Fields
+/// The following fields are preserved from the original dependency:
+/// - `optional`
+/// - `default-features`
+/// - `features`
+/// - `package`
+pub fn apply_dependency_override(cargo_toml_path: &Path, dep_name: &str, override_path: &Path) -> Result<(), String> {
+    // Convert to absolute path
+    let override_path = if override_path.is_absolute() {
+        override_path.to_path_buf()
+    } else {
+        env::current_dir().map_err(|e| format!("Failed to get current dir: {}", e))?.join(override_path)
+    };
+
+    let mut content = String::new();
+
+    // Read original Cargo.toml
+    let mut file = fs::File::open(cargo_toml_path).map_err(|e| format!("Failed to open Cargo.toml: {}", e))?;
+    std::io::Read::read_to_string(&mut file, &mut content).map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
+    drop(file);
+
+    // Parse as TOML
+    let mut doc: toml_edit::DocumentMut = content.parse().map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
+
+    // Update dependency in all sections (force mode - replaces the spec entirely)
+    let sections = vec!["dependencies", "dev-dependencies", "build-dependencies"];
+
+    for section in sections {
+        if let Some(deps) = doc.get_mut(section).and_then(|s| s.as_table_mut())
+            && let Some(dep) = deps.get_mut(dep_name)
+        {
+            debug!("Force-replacing {} in [{}] with path {:?}", dep_name, section, override_path);
+
+            // Preserve existing fields (optional, default-features, features, etc.)
+            let mut new_dep = toml_edit::InlineTable::new();
+            new_dep.insert("path", override_path.display().to_string().into());
+
+            // Copy fields from original dependency if it's a table
+            if let Some(old_table) = dep.as_inline_table() {
+                // Preserve important fields
+                for key in ["optional", "default-features", "features", "package"] {
+                    if let Some(value) = old_table.get(key) {
+                        new_dep.insert(key, value.clone());
+                        debug!("Preserving field '{}' = {:?}", key, value);
+                    }
+                }
+            } else if let Some(old_table) = dep.as_table_like() {
+                // Handle table-like dependencies
+                for key in ["optional", "default-features", "features", "package"] {
+                    if let Some(value) = old_table.get(key)
+                        && let Some(v) = value.as_value()
+                    {
+                        new_dep.insert(key, v.clone());
+                        debug!("Preserving field '{}' = {:?}", key, v);
+                    }
+                }
+            }
+
+            *dep = toml_edit::Item::Value(toml_edit::Value::InlineTable(new_dep));
+        }
+    }
+
+    debug!("Force-replaced {} dependency spec with path: {}", dep_name, override_path.display());
+
+    // Write back
+    let mut file = fs::File::create(cargo_toml_path).map_err(|e| format!("Failed to create Cargo.toml: {}", e))?;
+    std::io::Write::write_all(&mut file, doc.to_string().as_bytes())
+        .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
+
     Ok(())
 }
 
@@ -269,5 +353,56 @@ mod tests {
 
         let restored = fs::read_to_string(&file_path).unwrap();
         assert_eq!(restored, original_content);
+    }
+
+    #[test]
+    fn test_apply_dependency_override() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("Cargo.toml");
+
+        // Create Cargo.toml with a simple dependency
+        let original = r#"[package]
+name = "test"
+version = "0.1.0"
+
+[dependencies]
+rgb = "0.8"
+"#;
+        fs::write(&file_path, original).unwrap();
+
+        // Apply dependency override
+        apply_dependency_override(&file_path, "rgb", Path::new("/path/to/rgb")).unwrap();
+
+        // Verify the dependency was replaced with a path
+        let modified = fs::read_to_string(&file_path).unwrap();
+        assert!(modified.contains("rgb = { path ="));
+        assert!(modified.contains("/path/to/rgb"));
+        // Should NOT have a patch section
+        assert!(!modified.contains("[patch.crates-io]"));
+    }
+
+    #[test]
+    fn test_apply_dependency_override_preserves_fields() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("Cargo.toml");
+
+        // Create Cargo.toml with a dependency that has extra fields
+        let original = r#"[package]
+name = "test"
+version = "0.1.0"
+
+[dependencies]
+rgb = { version = "0.8", optional = true, default-features = false }
+"#;
+        fs::write(&file_path, original).unwrap();
+
+        // Apply dependency override
+        apply_dependency_override(&file_path, "rgb", Path::new("/path/to/rgb")).unwrap();
+
+        // Verify the dependency was replaced but optional and default-features preserved
+        let modified = fs::read_to_string(&file_path).unwrap();
+        assert!(modified.contains("path ="));
+        assert!(modified.contains("optional"));
+        assert!(modified.contains("default-features"));
     }
 }

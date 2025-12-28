@@ -94,10 +94,24 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         None
     };
 
-    // Apply patch if needed
+    // Apply patching based on strategy
     if should_modify_toml && let Some(ref override_path) = config.override_path {
-        patching::apply_patch_crates_io(&cargo_toml_path, &config.base_crate, override_path)
-            .map_err(|e| format!("Failed to apply patch: {}", e))?;
+        if config.force_version {
+            // Force mode: replace dependency spec directly (bypasses semver)
+            patching::apply_dependency_override(&cargo_toml_path, &config.base_crate, override_path)
+                .map_err(|e| format!("Failed to apply dependency override: {}", e))?;
+
+            // If patch_transitive is also enabled, add [patch.crates-io] for transitive deps
+            if config.patch_transitive {
+                patching::apply_patch_crates_io(&cargo_toml_path, &config.base_crate, override_path)
+                    .map_err(|e| format!("Failed to apply patch: {}", e))?;
+                debug!("Applied BOTH force override AND [patch.crates-io] for transitive patching");
+            }
+        } else {
+            // Non-force mode: use [patch.crates-io] only
+            patching::apply_patch_crates_io(&cargo_toml_path, &config.base_crate, override_path)
+                .map_err(|e| format!("Failed to apply patch: {}", e))?;
+        }
     }
 
     // Build environment variables
@@ -114,8 +128,14 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         if retry::should_retry_with_patch(&analysis, patch_depth == PatchDepth::Patch) {
             debug!("Detected multi-version conflict, retrying with [patch.crates-io]");
 
-            // Apply patch and retry
+            // Apply both force override AND [patch.crates-io] for retry
             if let Some(ref override_path) = config.override_path {
+                // If we were using force mode, reapply the dependency override
+                if config.force_version {
+                    patching::apply_dependency_override(&cargo_toml_path, &config.base_crate, override_path)
+                        .map_err(|e| format!("Failed to apply dependency override for retry: {}", e))?;
+                }
+                // Always add [patch.crates-io] for the retry (this is what fixes the conflict)
                 patching::apply_patch_crates_io(&cargo_toml_path, &config.base_crate, override_path)
                     .map_err(|e| format!("Failed to apply patch for retry: {}", e))?;
             }
