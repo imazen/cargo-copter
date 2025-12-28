@@ -31,8 +31,10 @@ pub fn run_cargo_step(step: CompileStep, crate_path: &Path, features: &[String])
     let mut cmd = Command::new("cargo");
     cmd.arg(step.cargo_subcommand());
 
-    // Add JSON output for structured error parsing
-    cmd.arg("--message-format=json");
+    // Add JSON output for structured error parsing (fetch doesn't support this)
+    if step != CompileStep::Fetch {
+        cmd.arg("--message-format=json");
+    }
 
     // Add features if specified
     if !features.is_empty() {
@@ -91,8 +93,10 @@ pub fn run_cargo_step_with_env(
     let mut cmd = Command::new("cargo");
     cmd.arg(step.cargo_subcommand());
 
-    // Add JSON output
-    cmd.arg("--message-format=json");
+    // Add JSON output (fetch doesn't support this)
+    if step != CompileStep::Fetch {
+        cmd.arg("--message-format=json");
+    }
 
     // Add features
     if !features.is_empty() {
@@ -169,7 +173,6 @@ pub fn run_cargo_fetch_with_config(crate_path: &Path, crate_name: &str, override
         .arg("fetch")
         .arg("--config")
         .arg(&config)
-        .arg("--message-format=json")
         .current_dir(crate_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
