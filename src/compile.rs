@@ -1045,7 +1045,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
 
             // Check failed - try auto-retry with [patch.crates-io] if it's a multi-version conflict
             let combined_output = format!("{}\n{}", result.stdout, result.stderr);
-            if force_versions && has_multiple_version_conflict(&combined_output) {
+            if force_versions && (has_multiple_version_conflict(&combined_output) || has_multiple_resolved_versions(crate_path, base_crate_name)) {
                 debug!("Multi-version conflict detected, attempting auto-retry with [patch.crates-io]");
 
                 // Restore Cargo.toml and apply both force AND patch.crates-io
