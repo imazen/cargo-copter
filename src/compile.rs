@@ -1169,34 +1169,133 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
     };
 
     // Step 3: Test (only if check succeeded or was skipped, and not skip_test)
-    let test = if !skip_test {
+    // If test fails with force_versions, check for multi-version conflicts in the dep tree
+    // and retry with [patch.crates-io] (mirrors the check-step auto-retry logic).
+    // This catches cases where dev-dependencies (only compiled during tests) bring in
+    // a second version of the base crate, causing trait mismatches that the compiler
+    // doesn't always annotate with "multiple different versions of crate".
+    let (test, _test_patch_depth): (Option<CompileResult>, Option<PatchDepth>) = if !skip_test {
         let should_run = match &check {
             Some(c) => c.success,
             None => true, // check was skipped, proceed
         };
 
-        if should_run { Some(compile_crate(crate_path, CompileStep::Test, override_spec)?) } else { None }
-    } else {
-        None
-    };
+        if should_run {
+            let result = compile_crate(crate_path, CompileStep::Test, override_spec)?;
+            if result.failed() && force_versions {
+                // Check if there are multiple resolved versions in the dep tree
+                let multi_version_in_tree = has_multiple_resolved_versions(crate_path, base_crate_name);
+                let combined_output = format!("{}\n{}", result.stdout, result.stderr);
+                let multi_version_in_output = has_multiple_version_conflict(&combined_output);
 
-    // Log test failure if test failed
-    if let Some(ref test_result) = test
-        && test_result.failed()
-        && let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label)
-    {
-        log_failure_with_diagnostics(
-            dep_info.name,
-            dep_info.version,
-            base_crate_name,
-            label,
-            "cargo test",
-            None,
-            &test_result.stdout,
-            &test_result.stderr,
-            &test_result.diagnostics,
-        );
-    }
+                if multi_version_in_tree || multi_version_in_output {
+                    debug!(
+                        "Test failed with multi-version conflict (tree={}, output={}), attempting auto-retry with [patch.crates-io]",
+                        multi_version_in_tree, multi_version_in_output
+                    );
+
+                    // Restore Cargo.toml and apply both force AND patch.crates-io
+                    restore_cargo_toml(crate_path)?;
+                    let lock_file = crate_path.join("Cargo.lock");
+                    if lock_file.exists() {
+                        let _ = fs::remove_file(&lock_file);
+                    }
+
+                    if let Some(op) = override_path {
+                        apply_dependency_override(
+                            crate_path,
+                            base_crate_name,
+                            op,
+                            DependencyOverrideMode::Force,
+                        )?;
+                        apply_patch_crates_io(crate_path, base_crate_name, op)?;
+                        debug!("Applied FORCE + [patch.crates-io] for test auto-retry");
+                    }
+
+                    // Retry fetch + check + test
+                    let retry_fetch = compile_crate(crate_path, CompileStep::Fetch, None)?;
+                    if retry_fetch.success {
+                        let retry_check = compile_crate(crate_path, CompileStep::Check, None)?;
+                        if retry_check.success {
+                            let retry_test = compile_crate(crate_path, CompileStep::Test, None)?;
+
+                            if let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
+                                if retry_test.failed() {
+                                    log_failure_with_diagnostics(
+                                        dep_info.name,
+                                        dep_info.version,
+                                        base_crate_name,
+                                        label,
+                                        "cargo test",
+                                        None,
+                                        &retry_test.stdout,
+                                        &retry_test.stderr,
+                                        &retry_test.diagnostics,
+                                    );
+                                }
+                            }
+
+                            restore_cargo_toml(crate_path).ok();
+                            let all_crate_versions = extract_all_crate_versions(crate_path, base_crate_name);
+
+                            return Ok(ThreeStepResult {
+                                fetch: retry_fetch,
+                                check: Some(retry_check),
+                                test: Some(retry_test),
+                                actual_version: verify_dependency_version(crate_path, base_crate_name),
+                                expected_version: expected_version.clone(),
+                                forced_version: true,
+                                original_requirement: original_requirement.clone(),
+                                all_crate_versions,
+                                patch_depth: PatchDepth::Patch, // !! marker
+                            });
+                        }
+                    }
+
+                    // Retry failed, restore and fall through with original result
+                    debug!("Test auto-retry with [patch.crates-io] failed");
+                    restore_cargo_toml(crate_path).ok();
+                }
+
+                // Log original failure
+                if let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
+                    log_failure_with_diagnostics(
+                        dep_info.name,
+                        dep_info.version,
+                        base_crate_name,
+                        label,
+                        "cargo test",
+                        None,
+                        &result.stdout,
+                        &result.stderr,
+                        &result.diagnostics,
+                    );
+                }
+                (Some(result), None)
+            } else {
+                if result.failed() {
+                    if let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
+                        log_failure_with_diagnostics(
+                            dep_info.name,
+                            dep_info.version,
+                            base_crate_name,
+                            label,
+                            "cargo test",
+                            None,
+                            &result.stdout,
+                            &result.stderr,
+                            &result.diagnostics,
+                        );
+                    }
+                }
+                (Some(result), None)
+            }
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
 
     // Cleanup: Always restore Cargo.toml to original state
     // This handles both FORCE mode (where we modified it) and ensures clean state
@@ -1227,6 +1326,25 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         all_crate_versions,
         patch_depth,
     })
+}
+
+/// Check if the dependency tree has multiple distinct resolved versions of a crate.
+/// This detects multi-version conflicts even when the compiler error message
+/// doesn't explicitly mention "multiple different versions of crate".
+fn has_multiple_resolved_versions(crate_dir: &Path, crate_name: &str) -> bool {
+    let all_versions = extract_all_crate_versions(crate_dir, crate_name);
+    let unique_versions: std::collections::HashSet<&String> =
+        all_versions.iter().map(|(_, resolved, _)| resolved).collect();
+    let result = unique_versions.len() > 1;
+    if result {
+        debug!(
+            "Detected {} distinct resolved versions of '{}': {:?}",
+            unique_versions.len(),
+            crate_name,
+            unique_versions
+        );
+    }
+    result
 }
 
 /// Extract ALL versions of a crate from cargo metadata (for multi-version scenarios)
