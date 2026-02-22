@@ -1,7 +1,7 @@
 [package]
 name = "dependent-passing"
 version = "1.0.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 base-crate = { path = "../base-crate-v1" }
