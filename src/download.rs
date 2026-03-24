@@ -47,10 +47,15 @@ pub fn crate_url_with_parms(krate: &str, call: Option<&str>, parms: &[(&str, &st
 /// Download data from a URL using HTTP GET
 #[allow(clippy::result_large_err)]
 pub fn http_get_bytes(url: &str) -> Result<Vec<u8>, ureq::Error> {
-    let resp = ureq::get(url).set("User-Agent", USER_AGENT).call()?;
-    let len = resp.header("Content-Length").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+    let resp = ureq::get(url).header("User-Agent", USER_AGENT).call()?;
+    let len = resp
+        .headers()
+        .get("Content-Length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s: &str| s.parse::<usize>().ok())
+        .unwrap_or(0);
     let mut data: Vec<u8> = Vec::with_capacity(len);
-    resp.into_reader().read_to_end(&mut data)?;
+    resp.into_body().into_reader().read_to_end(&mut data)?;
     Ok(data)
 }
 
