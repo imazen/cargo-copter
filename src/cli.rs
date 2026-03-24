@@ -38,6 +38,19 @@ pub struct CliArgs {
     #[arg(long, value_name = "PATH", num_args = 1..)]
     pub dependent_paths: Vec<PathBuf>,
 
+    /// Discover local dependents via glob patterns matching Cargo.toml files
+    /// Only includes crates that actually depend on the base crate
+    /// Example: --dependent-glob "~/work/*/Cargo.toml" "~/work/zen/*/Cargo.toml"
+    #[arg(long, value_name = "GLOB", num_args = 1..)]
+    pub dependent_glob: Vec<String>,
+
+    /// Discover local dependents in directories (one level deep)
+    /// Searches each directory for subdirectories containing Cargo.toml
+    /// Only includes crates that actually depend on the base crate
+    /// Example: --dependent-dir ~/work/ ~/work/zen/
+    #[arg(long, value_name = "DIR", num_args = 1..)]
+    pub dependent_dir: Vec<PathBuf>,
+
     /// Test against specific versions of the base crate (e.g., "0.3.0 4.1.1")
     /// When specified with --path, includes "this" (WIP version) automatically
     /// Supports versions with hyphens: "0.8.0 1.0.0-rc.1 1.0.0-alpha.2"
@@ -133,10 +146,15 @@ impl CliArgs {
             return Err("Cannot specify both --only-fetch and --only-check".to_string());
         }
 
-        // Need at least one of: top_dependents, dependents, or dependent_paths
-        if self.top_dependents == 0 && self.dependents.is_empty() && self.dependent_paths.is_empty() {
+        // Need at least one of: top_dependents, dependents, dependent_paths, dependent_glob, or dependent_dir
+        if self.top_dependents == 0
+            && self.dependents.is_empty()
+            && self.dependent_paths.is_empty()
+            && self.dependent_glob.is_empty()
+            && self.dependent_dir.is_empty()
+        {
             return Err(
-                "Must specify at least one of: --top-dependents, --dependents, or --dependent-paths".to_string()
+                "Must specify at least one of: --top-dependents, --dependents, --dependent-paths, --dependent-glob, or --dependent-dir".to_string()
             );
         }
 
@@ -182,6 +200,8 @@ mod tests {
             top_dependents: 5,
             dependents: vec![],
             dependent_paths: vec![],
+            dependent_glob: vec![],
+            dependent_dir: vec![],
             test_versions: vec![],
             force_versions: vec![],
             output: PathBuf::from("report.html"),
@@ -211,6 +231,8 @@ mod tests {
             top_dependents: 5,
             dependents: vec![],
             dependent_paths: vec![],
+            dependent_glob: vec![],
+            dependent_dir: vec![],
             test_versions: vec![],
             force_versions: vec![],
             output: PathBuf::from("report.html"),

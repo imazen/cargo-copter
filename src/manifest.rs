@@ -57,3 +57,36 @@ pub fn parse_dependent_spec(spec: &str) -> (String, Option<String>) {
         None => (spec.to_string(), None),
     }
 }
+
+/// Check if a Cargo.toml depends on the given crate name
+///
+/// Checks [dependencies], [dev-dependencies], and [build-dependencies].
+pub fn depends_on(manifest_path: &Path, crate_name: &str) -> Result<bool, String> {
+    let toml_str = load_string(manifest_path)?;
+    let value: toml::Value = toml::from_str(&toml_str).map_err(|e| format!("Failed to parse TOML: {}", e))?;
+
+    for section in &["dependencies", "dev-dependencies", "build-dependencies"] {
+        if let Some(toml::Value::Table(deps)) = value.get(section) {
+            if deps.contains_key(crate_name) {
+                return Ok(true);
+            }
+        }
+    }
+
+    // Also check target-specific dependencies: [target.'cfg(...)'.dependencies]
+    if let Some(toml::Value::Table(targets)) = value.get("target") {
+        for (_target, target_val) in targets {
+            if let toml::Value::Table(target_table) = target_val {
+                for section in &["dependencies", "dev-dependencies", "build-dependencies"] {
+                    if let Some(toml::Value::Table(deps)) = target_table.get(*section) {
+                        if deps.contains_key(crate_name) {
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(false)
+}

@@ -293,6 +293,91 @@ fn version_source_to_spec(
 }
 
 /// Resolve all dependents to test
+/// Expand --dependent-glob and --dependent-dir into concrete paths
+fn expand_dependent_discovery(args: &CliArgs, base_crate_name: &str) -> Result<Vec<PathBuf>, String> {
+    let mut discovered = Vec::new();
+
+    // Expand --dependent-glob patterns
+    for pattern in &args.dependent_glob {
+        // Expand ~ to home directory
+        let expanded = if pattern.starts_with('~') {
+            if let Some(home) = dirs::home_dir() {
+                pattern.replacen('~', &home.display().to_string(), 1)
+            } else {
+                pattern.clone()
+            }
+        } else {
+            pattern.clone()
+        };
+
+        let entries = glob::glob(&expanded).map_err(|e| format!("Invalid glob pattern '{}': {}", pattern, e))?;
+
+        for entry in entries {
+            let path = entry.map_err(|e| format!("Glob error: {}", e))?;
+            if path.file_name().map(|n| n == "Cargo.toml").unwrap_or(false) {
+                match manifest::depends_on(&path, base_crate_name) {
+                    Ok(true) => {
+                        let dir = path.parent().unwrap().to_path_buf();
+                        debug!("Glob discovered dependent: {}", dir.display());
+                        discovered.push(dir);
+                    }
+                    Ok(false) => {
+                        debug!("Glob skipping {} (does not depend on {})", path.display(), base_crate_name);
+                    }
+                    Err(e) => {
+                        debug!("Glob skipping {} ({})", path.display(), e);
+                    }
+                }
+            }
+        }
+    }
+
+    // Expand --dependent-dir (search one level deep for Cargo.toml)
+    for dir in &args.dependent_dir {
+        if !dir.is_dir() {
+            return Err(format!("--dependent-dir path is not a directory: {}", dir.display()));
+        }
+
+        let entries =
+            std::fs::read_dir(dir).map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Directory read error: {}", e))?;
+            let child = entry.path();
+            if child.is_dir() {
+                let manifest = child.join("Cargo.toml");
+                if manifest.exists() {
+                    match manifest::depends_on(&manifest, base_crate_name) {
+                        Ok(true) => {
+                            debug!("Dir discovered dependent: {}", child.display());
+                            discovered.push(child);
+                        }
+                        Ok(false) => {
+                            debug!("Dir skipping {} (does not depend on {})", child.display(), base_crate_name);
+                        }
+                        Err(e) => {
+                            debug!("Dir skipping {} ({})", child.display(), e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Deduplicate by canonical path
+    let mut seen = std::collections::HashSet::new();
+    discovered.retain(|p| {
+        let canonical = p.canonicalize().unwrap_or_else(|_| p.clone());
+        seen.insert(canonical)
+    });
+
+    if !discovered.is_empty() {
+        eprintln!("Discovered {} local dependent(s) of {}", discovered.len(), base_crate_name);
+    }
+
+    Ok(discovered)
+}
+
 fn resolve_dependents(args: &CliArgs, base_crate_name: &str) -> Result<Vec<VersionSpec>, String> {
     let mut dependents = Vec::new();
 
@@ -300,9 +385,15 @@ fn resolve_dependents(args: &CliArgs, base_crate_name: &str) -> Result<Vec<Versi
     // Collect local path dependents separately (they use CrateSource::Local, not Registry)
     let mut local_dependents: Vec<VersionSpec> = Vec::new();
 
-    let rev_deps: Vec<(String, Option<String>)> = if !args.dependent_paths.is_empty() {
+    // Expand --dependent-glob and --dependent-dir into additional paths
+    let discovered_paths = expand_dependent_discovery(args, base_crate_name)?;
+
+    // Combine explicit --dependent-paths with discovered paths
+    let all_local_paths: Vec<PathBuf> = args.dependent_paths.iter().cloned().chain(discovered_paths).collect();
+
+    let rev_deps: Vec<(String, Option<String>)> = if !all_local_paths.is_empty() {
         // Local paths mode - read Cargo.toml from each path to get crate name and version
-        for p in &args.dependent_paths {
+        for p in &all_local_paths {
             let manifest_path = if p.ends_with("Cargo.toml") {
                 p.clone()
             } else if p.is_dir() {
