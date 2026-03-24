@@ -297,17 +297,37 @@ fn resolve_dependents(args: &CliArgs, base_crate_name: &str) -> Result<Vec<Versi
     let mut dependents = Vec::new();
 
     // Determine which dependents to test
+    // Collect local path dependents separately (they use CrateSource::Local, not Registry)
+    let mut local_dependents: Vec<VersionSpec> = Vec::new();
+
     let rev_deps: Vec<(String, Option<String>)> = if !args.dependent_paths.is_empty() {
-        // Local paths mode - convert to dependent names
-        args.dependent_paths
-            .iter()
-            .map(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|s| (s.to_string(), None))
-                    .ok_or_else(|| format!("Invalid path: {}", p.display()))
-            })
-            .collect::<Result<Vec<_>, _>>()?
+        // Local paths mode - read Cargo.toml from each path to get crate name and version
+        for p in &args.dependent_paths {
+            let manifest_path = if p.ends_with("Cargo.toml") {
+                p.clone()
+            } else if p.is_dir() {
+                p.join("Cargo.toml")
+            } else {
+                return Err(format!("Invalid dependent path (not a directory or Cargo.toml): {}", p.display()));
+            };
+
+            let (name, version) = manifest::get_crate_info(&manifest_path)
+                .map_err(|e| format!("Failed to read dependent at {}: {}", manifest_path.display(), e))?;
+
+            let dir_path = if manifest_path.ends_with("Cargo.toml") {
+                manifest_path.parent().unwrap().to_path_buf()
+            } else {
+                p.clone()
+            };
+
+            local_dependents.push(VersionSpec {
+                crate_ref: VersionedCrate::from_local(&name, &version, dir_path),
+                override_mode: OverrideMode::None,
+                is_baseline: false, // Will be set below
+            });
+        }
+        // Return empty rev_deps since we handled these directly
+        vec![]
     } else if !args.dependents.is_empty() {
         // Explicit crate names from crates.io (parse name:version syntax)
         args.dependents.iter().map(|spec| manifest::parse_dependent_spec(spec)).collect()
@@ -318,6 +338,13 @@ fn resolve_dependents(args: &CliArgs, base_crate_name: &str) -> Result<Vec<Versi
         api_deps.into_iter().map(|d| (d.name, None)).collect()
     };
 
+    // Add local dependents first (from --dependent-paths)
+    for mut local_dep in local_dependents {
+        local_dep.is_baseline = dependents.is_empty(); // First is baseline
+        dependents.push(local_dep);
+    }
+
+    // Add registry dependents (from --dependents or --top-dependents)
     for (name, version) in rev_deps {
         let version_spec = if let Some(ver) = version {
             // Specific version requested
