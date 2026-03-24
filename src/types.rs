@@ -12,6 +12,10 @@ pub struct OfferedRow {
     /// Baseline test result: None = this IS baseline, Some(bool) = baseline exists and passed/failed
     pub baseline_passed: Option<bool>,
 
+    /// Whether baseline's check step passed (None = this IS baseline or check skipped)
+    /// Used to distinguish "baseline doesn't compile" from "baseline compiles but tests fail"
+    pub baseline_check_passed: Option<bool>,
+
     /// Primary dependency being tested (depth 0)
     pub primary: DependencyRef,
 

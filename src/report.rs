@@ -526,6 +526,11 @@ pub struct TestSummary {
 }
 
 /// Calculate summary statistics from OfferedRows
+///
+/// Uses baseline_check_passed to distinguish "truly broken" (check fails)
+/// from "test already failing" (check passes, test fails). Only check
+/// failures count as "broken" — test-only failures on baseline are not
+/// counted against you.
 pub fn summarize_offered_rows(rows: &[OfferedRow]) -> TestSummary {
     let mut passed = 0;
     let mut regressed = 0;
@@ -536,12 +541,24 @@ pub fn summarize_offered_rows(rows: &[OfferedRow]) -> TestSummary {
         if row.offered.is_some() {
             let overall_passed = row.test.commands.iter().all(|cmd| cmd.result.passed);
 
-            match (row.baseline_passed, overall_passed) {
-                (Some(true), true) => passed += 1,     // PASSED
-                (Some(true), false) => regressed += 1, // REGRESSED
-                (Some(false), _) => broken += 1,       // BROKEN
-                (None, true) => passed += 1,           // PASSED (no baseline)
-                (None, false) => broken += 1,          // FAILED (no baseline)
+            // Use baseline_check_passed to determine if baseline truly compiles
+            // Only consider baseline "broken" if check fails — test failures don't count
+            let baseline_compiles = row.baseline_check_passed.unwrap_or_else(|| row.baseline_passed.unwrap_or(false));
+
+            match (baseline_compiles, row.baseline_passed, overall_passed) {
+                // Baseline doesn't compile = truly broken (not your problem)
+                (false, _, _) => broken += 1,
+                // Baseline compiles AND fully passed, this passed
+                (true, Some(true), true) => passed += 1,
+                // Baseline compiles AND fully passed, this failed = REGRESSED
+                (true, Some(true), false) => regressed += 1,
+                // Baseline compiles but test failed, this passed
+                (true, Some(false), true) => passed += 1,
+                // Baseline compiles but test failed, this also failed = not a regression
+                (true, Some(false), false) => passed += 1,
+                // No baseline data
+                (true, None, true) => passed += 1,
+                (true, None, false) => broken += 1,
             }
         }
     }
@@ -602,15 +619,25 @@ pub fn build_compatibility_report(rows: &[OfferedRow], base_crate: &str) -> Comp
             // Baseline row
             baseline_version = row.primary.resolved_version.clone();
 
+            // Check if baseline compiles (check step passed)
+            let check_passed = row
+                .test
+                .commands
+                .iter()
+                .filter(|cmd| matches!(cmd.command, CommandType::Check | CommandType::Fetch))
+                .all(|cmd| cmd.result.passed);
+
             if row.test_passed() {
                 baseline_passing += 1;
-            } else {
+            } else if !check_passed {
+                // Check/fetch failed — truly broken
                 let failure = crate::categorize::categorize_failure(row, base_crate);
                 if failure.category == crate::categorize::FailureCategory::VersionConflict {
                     version_conflict_count += 1;
                 }
                 baseline_failures.push(failure);
             }
+            // else: check passed but test failed — not "broken", just flaky/failing tests
         } else {
             has_offered = true;
             if target_version.is_none() {
@@ -618,21 +645,26 @@ pub fn build_compatibility_report(rows: &[OfferedRow], base_crate: &str) -> Comp
             }
 
             let overall_passed = row.test_passed();
-            match (row.baseline_passed, overall_passed) {
-                (Some(true), false) => {
-                    // Regression
-                    let snippet = crate::categorize::categorize_failure(row, base_crate).error_snippet;
-                    regressions.push(RegressionInfo {
-                        dependent_name: row.primary.dependent_name.clone(),
-                        error_snippet: snippet,
-                    });
-                }
-                (Some(false), true) => {
-                    // Fixed
-                    fixed.push(row.primary.dependent_name.clone());
-                }
-                _ => {}
+
+            // Use baseline_check_passed to distinguish "truly broken" from "test failing"
+            let baseline_compiles = row.baseline_check_passed.unwrap_or_else(|| row.baseline_passed.unwrap_or(false));
+
+            if !baseline_compiles {
+                // Baseline doesn't compile — not your problem, skip
+            } else if row.baseline_passed == Some(true) && !overall_passed {
+                // Baseline fully passed, this failed = REGRESSION
+                let snippet = crate::categorize::categorize_failure(row, base_crate).error_snippet;
+                regressions.push(RegressionInfo {
+                    dependent_name: row.primary.dependent_name.clone(),
+                    error_snippet: snippet,
+                });
+            } else if row.baseline_passed == Some(true) && overall_passed {
+                // Both passed — fine
+            } else if row.baseline_passed == Some(false) && overall_passed {
+                // Fixed
+                fixed.push(row.primary.dependent_name.clone());
             }
+            // baseline_passed == Some(false) && !overall_passed: both failing, not a regression
         }
     }
 
@@ -647,7 +679,18 @@ pub fn build_compatibility_report(rows: &[OfferedRow], base_crate: &str) -> Comp
         baseline_failures: failure_summary,
         version_conflict_count,
         baseline_passing,
-        baseline_broken_total: rows.iter().filter(|r| r.offered.is_none() && !r.test_passed()).count(),
+        baseline_broken_total: rows
+            .iter()
+            .filter(|r| {
+                r.offered.is_none()
+                    && !r
+                        .test
+                        .commands
+                        .iter()
+                        .filter(|cmd| matches!(cmd.command, CommandType::Check | CommandType::Fetch))
+                        .all(|cmd| cmd.result.passed)
+            })
+            .count(),
         is_baseline_only: !has_offered,
     }
 }
