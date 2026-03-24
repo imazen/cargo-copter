@@ -1668,9 +1668,38 @@ pub fn print_simple_summary(rows: &[OfferedRow], report_dir: &Path, base_crate: 
         }
     }
 
-    // Print broken already
+    // Print broken already with categorization
     if !broken_already.is_empty() {
-        println!("BROKEN ALREADY: {}", broken_already.join(", "));
+        // Categorize baseline failures
+        let baseline_failed_rows: Vec<&OfferedRow> = rows
+            .iter()
+            .filter(|r| {
+                r.offered.is_none()
+                    && !r.test_passed()
+                    && !baseline_check_passed_deps.contains(&r.primary.dependent_name)
+            })
+            .collect();
+
+        let categorized: Vec<crate::categorize::CategorizedFailure> =
+            baseline_failed_rows.iter().map(|r| crate::categorize::categorize_failure(r, base_crate)).collect();
+
+        let summary = crate::categorize::FailureSummary::from_failures(categorized);
+
+        if summary.categories.len() > 1
+            || summary.categories.iter().any(|(cat, _)| *cat != crate::categorize::FailureCategory::Other)
+        {
+            // Show categorized breakdown
+            println!("BROKEN ALREADY ({}):", broken_already.len());
+            for (cat, failures) in &summary.categories {
+                let names: Vec<&str> = failures.iter().map(|f| f.dependent_name.as_str()).collect();
+                let display =
+                    if names.len() > 5 { format!("{}  ...", names[..5].join(", ")) } else { names.join(", ") };
+                println!("  {} ({}): {}", cat.label(), failures.len(), display);
+            }
+        } else {
+            // Simple flat list when all failures are "Other"
+            println!("BROKEN ALREADY: {}", broken_already.join(", "));
+        }
     }
 
     // Count totals

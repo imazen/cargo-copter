@@ -346,9 +346,11 @@ fn generate_non_console_reports(
         report::print_comparison_table(&comparison_stats);
     }
 
-    // Print compatibility report (both modes)
-    let compat_report = report::build_compatibility_report(rows, &matrix.base_crate);
-    report::print_compatibility_report(&compat_report, report_dir);
+    // Print compatibility report (table mode only — simple mode has its own summary)
+    if !simple_mode {
+        let compat_report = report::build_compatibility_report(rows, &matrix.base_crate);
+        report::print_compatibility_report(&compat_report, report_dir);
+    }
 }
 
 /// Format test plan as a string
