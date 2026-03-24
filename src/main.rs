@@ -308,12 +308,6 @@ fn generate_non_console_reports(
     report_dir: &std::path::Path,
     simple_mode: bool,
 ) {
-    if !simple_mode {
-        // Print comparison table (only for table mode - simple mode has its own summary)
-        let comparison_stats = report::generate_comparison_table(rows);
-        report::print_comparison_table(&comparison_stats);
-    }
-
     // Export markdown report
     let markdown_path = report_dir.join("report.md");
     let test_plan = format_test_plan_string(matrix);
@@ -347,18 +341,14 @@ fn generate_non_console_reports(
     }
 
     if !simple_mode {
-        // Print summary (only for table mode - simple mode has its own summary)
-        let summary = report::summarize_offered_rows(rows);
-        println!("\n=== Summary ===");
-        println!("✓ Passed:    {}", summary.passed);
-        println!("✗ Regressed: {}", summary.regressed);
-        println!("⚠ Broken:    {}", summary.broken);
-        println!("Total:       {}", summary.total);
-
-        // Print report paths
-        println!("\nMarkdown report saved to: {}", markdown_path.display());
-        println!("JSON report saved to: {}", json_path.display());
+        // Print comparison table (only for table mode - simple mode has its own summary)
+        let comparison_stats = report::generate_comparison_table(rows);
+        report::print_comparison_table(&comparison_stats);
     }
+
+    // Print compatibility report (both modes)
+    let compat_report = report::build_compatibility_report(rows, &matrix.base_crate);
+    report::print_compatibility_report(&compat_report, report_dir);
 }
 
 /// Format test plan as a string

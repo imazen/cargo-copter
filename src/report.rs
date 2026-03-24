@@ -549,6 +549,242 @@ pub fn summarize_offered_rows(rows: &[OfferedRow]) -> TestSummary {
     TestSummary { passed, regressed, broken, total: passed + regressed + broken }
 }
 
+/// Extended summary with categorized failures for the compatibility report
+pub struct CompatibilityReport {
+    /// Total dependents tested (unique)
+    pub total_dependents: usize,
+    /// Baseline version label
+    pub baseline_version: String,
+    /// Target version label (WIP or offered)
+    pub target_version: Option<String>,
+    /// Regressions (baseline passed, offered failed)
+    pub regressions: Vec<RegressionInfo>,
+    /// Fixed (baseline failed, offered passed)
+    pub fixed: Vec<String>,
+    /// Baseline failures categorized by root cause
+    pub baseline_failures: crate::categorize::FailureSummary,
+    /// Version conflict count (subset of baseline_failures but called out separately)
+    pub version_conflict_count: usize,
+    /// Baseline-only: total passing count
+    pub baseline_passing: usize,
+    /// Baseline-only: total broken count
+    pub baseline_broken_total: usize,
+    /// Whether this is a baseline-only report (no offered versions)
+    pub is_baseline_only: bool,
+}
+
+/// Info about a regression
+pub struct RegressionInfo {
+    pub dependent_name: String,
+    pub error_snippet: Option<String>,
+}
+
+/// Build a compatibility report from test results
+pub fn build_compatibility_report(rows: &[OfferedRow], base_crate: &str) -> CompatibilityReport {
+    use std::collections::HashSet;
+
+    let mut unique_dependents = HashSet::new();
+    let mut regressions = Vec::new();
+    let mut fixed = Vec::new();
+    let mut baseline_failures = Vec::new();
+    let mut baseline_passing = 0;
+    let mut version_conflict_count = 0;
+
+    // Collect baseline info
+    let mut baseline_version = String::from("unknown");
+    let mut has_offered = false;
+    let mut target_version = None;
+
+    for row in rows {
+        unique_dependents.insert(row.primary.dependent_name.clone());
+
+        if row.offered.is_none() {
+            // Baseline row
+            baseline_version = row.primary.resolved_version.clone();
+
+            if row.test_passed() {
+                baseline_passing += 1;
+            } else {
+                let failure = crate::categorize::categorize_failure(row, base_crate);
+                if failure.category == crate::categorize::FailureCategory::VersionConflict {
+                    version_conflict_count += 1;
+                }
+                baseline_failures.push(failure);
+            }
+        } else {
+            has_offered = true;
+            if target_version.is_none() {
+                target_version = row.offered.as_ref().map(|o| o.version.clone());
+            }
+
+            let overall_passed = row.test_passed();
+            match (row.baseline_passed, overall_passed) {
+                (Some(true), false) => {
+                    // Regression
+                    let snippet = crate::categorize::categorize_failure(row, base_crate).error_snippet;
+                    regressions.push(RegressionInfo {
+                        dependent_name: row.primary.dependent_name.clone(),
+                        error_snippet: snippet,
+                    });
+                }
+                (Some(false), true) => {
+                    // Fixed
+                    fixed.push(row.primary.dependent_name.clone());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let failure_summary = crate::categorize::FailureSummary::from_failures(baseline_failures);
+
+    CompatibilityReport {
+        total_dependents: unique_dependents.len(),
+        baseline_version,
+        target_version,
+        regressions,
+        fixed,
+        baseline_failures: failure_summary,
+        version_conflict_count,
+        baseline_passing,
+        baseline_broken_total: rows.iter().filter(|r| r.offered.is_none() && !r.test_passed()).count(),
+        is_baseline_only: !has_offered,
+    }
+}
+
+/// Print the compatibility report to stdout
+pub fn print_compatibility_report(report: &CompatibilityReport, report_dir: &Path) {
+    let bar = "=".repeat(65);
+    let thin_bar = "-".repeat(65);
+
+    if report.is_baseline_only {
+        // Baseline-only report
+        println!();
+        println!("{}", bar);
+        println!("{:^65}", "BASELINE REPORT");
+        println!("{}", bar);
+        println!("Tested: {} dependents    Version: {} (published)", report.total_dependents, report.baseline_version);
+        println!("{}", bar);
+        println!();
+        println!("  Passing:  {:>4}", report.baseline_passing);
+        println!("  Broken:   {:>4}", report.baseline_broken_total);
+
+        if report.baseline_broken_total > 0 {
+            println!();
+            println!("BROKEN BY CATEGORY:");
+            for (cat, failures) in &report.baseline_failures.categories {
+                let names: Vec<&str> = failures.iter().map(|f| f.dependent_name.as_str()).collect();
+                let display =
+                    if names.len() > 5 { format!("{}  ...", names[..5].join("  ")) } else { names.join("  ") };
+                println!("  {} ({}):  {}", cat.label(), failures.len(), display);
+            }
+        }
+    } else {
+        // Full comparison report
+        let target = report.target_version.as_deref().unwrap_or("offered");
+
+        println!();
+        println!("{}", bar);
+        println!("{:^65}", "COMPATIBILITY REPORT");
+        println!("{}", bar);
+        println!(
+            "Tested: {} dependents    Baseline: {}    Target: {}",
+            report.total_dependents, report.baseline_version, target
+        );
+        println!("{}", bar);
+
+        // YOUR CHANGES section
+        println!();
+        println!("YOUR CHANGES");
+        println!("{}", thin_bar);
+
+        let reg_count = report.regressions.len();
+        let fix_count = report.fixed.len();
+        let net: i64 = fix_count as i64 - reg_count as i64;
+
+        if reg_count > 0 {
+            println!("  Regressions: {:>4}    <-- crates broken by your version", reg_count);
+        } else {
+            println!("  Regressions: {:>4}", reg_count);
+        }
+        if fix_count > 0 {
+            println!("  Fixed:       {:>4}    <-- crates you fixed vs baseline", fix_count);
+        } else {
+            println!("  Fixed:       {:>4}", fix_count);
+        }
+        println!(
+            "  Net:         {:>+4}    {}",
+            net,
+            if net < 0 {
+                "(improvement)"
+            } else if net > 0 {
+                "(worse)"
+            } else {
+                "(no change)"
+            }
+        );
+
+        // List regressions with error snippets
+        if !report.regressions.is_empty() {
+            println!();
+            println!("REGRESSIONS (investigate these):");
+            for reg in &report.regressions {
+                if let Some(ref snippet) = reg.error_snippet {
+                    println!("  {:<20} {}", reg.dependent_name, snippet);
+                } else {
+                    println!("  {}", reg.dependent_name);
+                }
+            }
+        }
+
+        // List fixed crates
+        if !report.fixed.is_empty() {
+            println!();
+            println!("FIXED BY YOUR CHANGES:");
+            for name in &report.fixed {
+                println!("  {}  (passed)", name);
+            }
+        }
+
+        // NOT YOUR PROBLEM section
+        if report.baseline_broken_total > 0 || report.version_conflict_count > 0 {
+            println!();
+            println!("NOT YOUR PROBLEM");
+            println!("{}", thin_bar);
+
+            if report.baseline_broken_total > 0 {
+                println!("  Baseline broken: {:>4}    (fail with published deps too)", report.baseline_broken_total);
+            }
+
+            if report.version_conflict_count > 0 {
+                println!("  Version conflicts: {:>2}", report.version_conflict_count);
+                println!("    Re-run with --force-versions to check if these would pass");
+            }
+
+            // Show breakdown by category
+            if report.baseline_failures.total() > 0 {
+                println!();
+                println!("  By category:");
+                for (cat, failures) in &report.baseline_failures.categories {
+                    let names: Vec<&str> = failures.iter().map(|f| f.dependent_name.as_str()).collect();
+                    let display =
+                        if names.len() > 4 { format!("{}  ...", names[..4].join("  ")) } else { names.join("  ") };
+                    println!("    {} ({}):  {}", cat.label(), failures.len(), display);
+                }
+            }
+        }
+    }
+
+    println!();
+    println!("{}", bar);
+
+    // Report paths
+    println!();
+    println!("Reports:");
+    println!("  Markdown: {}/report.md", report_dir.display());
+    println!("  JSON:     {}/report.json", report_dir.display());
+}
+
 /// Generate comparison table statistics
 pub fn generate_comparison_table(rows: &[OfferedRow]) -> Vec<ComparisonStats> {
     use std::collections::{HashMap, HashSet};
