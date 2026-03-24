@@ -16,6 +16,7 @@
 
 mod api;
 mod bridge;
+mod categorize;
 mod cli;
 mod compile;
 mod config;
