@@ -115,6 +115,18 @@ cargo-copter --crate rgb --force-versions "0.8.51"
 
 # Clean cache and retest
 cargo-copter --clean --top-dependents 5
+
+# Test local unpublished dependents (works without crates.io)
+cargo-copter --path . --dependent-paths ~/work/my-dep1 ~/work/my-dep2
+
+# Auto-discover local dependents in directories
+cargo-copter --path . --dependent-dir ~/work/ ~/work/zen/
+
+# Auto-discover via glob (filters to crates that depend on yours)
+cargo-copter --path . --dependent-glob "~/work/*/Cargo.toml"
+
+# Breadth + depth: test top dependents, then add popular older versions
+cargo-copter --top-dependents 5 --top-versions 50
 ```
 
 ## CLI Options
@@ -123,18 +135,20 @@ cargo-copter --clean --top-dependents 5
 -p, --path <PATH>              Path to crate (directory or Cargo.toml)
 -c, --crate <NAME>             Test published crate by name
     --top-dependents <N>       Test top N by downloads [default: 5]
+    --top-versions <Q>         Budget for extra version slots across dependents
     --dependents <CRATE[:VER]> Test specific crates (space-separated)
-    --dependent-paths <PATH>   Test local crate paths
+    --dependent-paths <PATH>   Test local crate paths (works with unpublished crates)
+    --dependent-glob <GLOB>    Discover local dependents via glob patterns
+    --dependent-dir <DIR>      Discover local dependents in directories (1 level deep)
     --test-versions <VER>...   Test multiple versions
     --force-versions <VER>...  Force versions (bypass semver)
-    --staging-dir <PATH>       Cache directory [default: ~/.cache/cargo-copter/staging]. Try --staging-dir ./copter/staging for easier viewing of dependent source code.
-    --output <PATH>            HTML report [default: copter-report.html]
+    --staging-dir <PATH>       Cache directory [default: ~/.cache/cargo-copter/staging]
     --only-fetch               Only fetch dependencies (skip check and test)
     --only-check               Only fetch and check (skip tests)
     --clean                    Clean cache before testing
     --error-lines <N>          Error lines to show [default: 10]
+    --simple                   Verbal output format (good for AI parsing)
     --skip-normal-testing      Skip auto-patch mode for forced versions
-    --patch-transitive         Patch ALL transitive deps (unify crate versions)
     --json                     JSON output
 ```
 
@@ -146,8 +160,9 @@ cargo-copter --clean --top-dependents 5
 4. **Classification**:
    - ✓ **passed**: Baseline and offered both passed
    - ✗ **regressed**: Baseline passed, offered failed
-   - ✗ **broken**: Baseline already failed
+   - ✗ **broken**: Baseline check/fetch failed (not your problem)
    - ⊘ **skipped**: Version offered but not used by cargo
+5. **End-of-run report** separates "your fault" from "not your problem", with baseline failures categorized by root cause (yanked deps, system libs, build.rs, nightly, version conflicts, platform-specific)
 
 ## Version Testing Modes
 

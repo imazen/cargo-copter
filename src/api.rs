@@ -6,7 +6,7 @@ use crates_io_api::SyncClient;
 use log::debug;
 use std::time::Duration;
 
-const USER_AGENT: &str = "cargo-copter/0.1.1 (https://github.com/imazen/cargo-copter)";
+const USER_AGENT: &str = "cargo-copter/0.3.0 (https://github.com/imazen/cargo-copter)";
 const CRATES_IO_PAGE_SIZE: usize = 100;
 const MAX_API_PAGES: usize = 100; // Safety limit: don't fetch more than 10,000 deps
 
