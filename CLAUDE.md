@@ -116,6 +116,10 @@ Parse      Validate/Resolve     Immutable   Execute   Uniform   Display
   - Color terminal output
   - Text truncation
 
+- **`src/categorize.rs`** - Failure categorization by root cause
+  - Detects: yanked deps, build.rs, system libs, nightly, version conflicts, platform-specific
+  - Checks if errors mention the base crate name
+
 - **`src/error_extract.rs`** - JSON diagnostic parsing
 
 - **`src/download.rs`** - Crate downloading and caching
@@ -319,7 +323,11 @@ Contents:
 --clean                      # Purge staging directory before running tests
 --error-lines <N>            # Max lines to show per error (default: 10, 0=unlimited)
 --top-dependents <N>         # Test top N dependents by downloads
+--top-versions <Q>           # Budget for additional version slots across dependents
 --dependents <CRATE>...      # Specific dependents to test (name or name:version)
+--dependent-paths <PATH>...  # Test local crates at these paths (works with unpublished crates)
+--dependent-glob <GLOB>...   # Discover local dependents via glob patterns
+--dependent-dir <DIR>...     # Discover local dependents in directories (one level deep)
 --patch-transitive           # Add [patch.crates-io] to unify ALL transitive deps
 ```
 
@@ -342,6 +350,18 @@ cargo-copter --error-lines 50 --top-dependents 5
 
 # Patch transitive deps (for crates with multi-version conflicts)
 cargo-copter --dependents image gifski --patch-transitive
+
+# Test local unpublished dependents
+cargo-copter --path . --dependent-paths ~/work/crate1 ~/work/crate2
+
+# Auto-discover local dependents via glob
+cargo-copter --path . --dependent-glob "~/work/*/Cargo.toml" "~/work/zen/*/Cargo.toml"
+
+# Auto-discover local dependents in directories
+cargo-copter --path . --dependent-dir ~/work/ ~/work/zen/
+
+# Test top 5 dependents with 50 additional popular versions
+cargo-copter --top-dependents 5 --top-versions 50
 ```
 
 ## Common Workflows
