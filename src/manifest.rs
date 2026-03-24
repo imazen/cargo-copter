@@ -66,10 +66,10 @@ pub fn depends_on(manifest_path: &Path, crate_name: &str) -> Result<bool, String
     let value: toml::Value = toml::from_str(&toml_str).map_err(|e| format!("Failed to parse TOML: {}", e))?;
 
     for section in &["dependencies", "dev-dependencies", "build-dependencies"] {
-        if let Some(toml::Value::Table(deps)) = value.get(section) {
-            if deps.contains_key(crate_name) {
-                return Ok(true);
-            }
+        if let Some(toml::Value::Table(deps)) = value.get(section)
+            && deps.contains_key(crate_name)
+        {
+            return Ok(true);
         }
     }
 
@@ -78,10 +78,10 @@ pub fn depends_on(manifest_path: &Path, crate_name: &str) -> Result<bool, String
         for (_target, target_val) in targets {
             if let toml::Value::Table(target_table) = target_val {
                 for section in &["dependencies", "dev-dependencies", "build-dependencies"] {
-                    if let Some(toml::Value::Table(deps)) = target_table.get(*section) {
-                        if deps.contains_key(crate_name) {
-                            return Ok(true);
-                        }
+                    if let Some(toml::Value::Table(deps)) = target_table.get(*section)
+                        && deps.contains_key(crate_name)
+                    {
+                        return Ok(true);
                     }
                 }
             }
