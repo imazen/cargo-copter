@@ -101,6 +101,41 @@ pub fn get_top_dependents(crate_name: &str, limit: usize) -> Result<Vec<ReverseD
     get_reverse_dependencies(crate_name, Some(limit))
 }
 
+/// A version with its download count
+#[derive(Debug, Clone)]
+pub struct VersionDownloads {
+    pub version: String,
+    pub downloads: u64,
+    pub yanked: bool,
+}
+
+/// Get all versions of a crate with download counts, sorted by downloads descending
+///
+/// Excludes yanked and pre-release versions by default.
+pub fn get_version_downloads(crate_name: &str) -> Result<Vec<VersionDownloads>, String> {
+    debug!("fetching version downloads for {}", crate_name);
+
+    let krate = CRATES_IO_CLIENT
+        .get_crate(crate_name)
+        .map_err(|e| format!("Failed to fetch crate info for {}: {}", crate_name, e))?;
+
+    let mut versions: Vec<VersionDownloads> = krate
+        .versions
+        .iter()
+        .filter(|v| !v.yanked)
+        .filter(|v| {
+            // Exclude pre-release versions
+            semver::Version::parse(&v.num).map(|sv| sv.pre.is_empty()).unwrap_or(false)
+        })
+        .map(|v| VersionDownloads { version: v.num.clone(), downloads: v.downloads, yanked: v.yanked })
+        .collect();
+
+    versions.sort_by_key(|v| std::cmp::Reverse(v.downloads));
+
+    debug!("found {} versions for {}", versions.len(), crate_name);
+    Ok(versions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

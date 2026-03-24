@@ -33,11 +33,20 @@ pub fn build_test_matrix(args: &CliArgs) -> Result<TestMatrix, String> {
     debug!("Resolved {} base versions to test", base_versions.len());
 
     // Step 3: Build list of dependents to test
-    let dependents = resolve_dependents(args, &base_crate_name)?;
+    let mut dependents = resolve_dependents(args, &base_crate_name)?;
 
     debug!("Resolved {} dependents to test", dependents.len());
 
-    // Step 4: Ensure baseline versions are resolved for each dependent
+    // Step 4: Expand with additional versions if --top-versions is specified
+    if let Some(budget) = args.top_versions {
+        let extra = resolve_top_versions(&dependents, budget)?;
+        if !extra.is_empty() {
+            debug!("Adding {} additional (dependent, version) pairs from --top-versions", extra.len());
+            dependents.extend(extra);
+        }
+    }
+
+    // Step 5: Ensure baseline versions are resolved for each dependent
     // (This happens during test execution when we need the actual resolved versions)
 
     // Deprecation warning for --patch-transitive
@@ -461,6 +470,80 @@ fn resolve_dependents(args: &CliArgs, base_crate_name: &str) -> Result<Vec<Versi
     }
 
     Ok(dependents)
+}
+
+/// Resolve additional (dependent, version) pairs for --top-versions budget
+///
+/// Each dependent already has its latest version in the list. This function
+/// fetches version download counts and allocates Q additional slots across
+/// all dependents, ranked by downloads.
+fn resolve_top_versions(existing_dependents: &[VersionSpec], budget: usize) -> Result<Vec<VersionSpec>, String> {
+    if budget == 0 {
+        return Ok(vec![]);
+    }
+
+    // Only expand registry dependents (local dependents don't have multiple versions on crates.io)
+    let registry_deps: Vec<&VersionSpec> =
+        existing_dependents.iter().filter(|d| matches!(d.crate_ref.source, CrateSource::Registry)).collect();
+
+    if registry_deps.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Collect all (dependent_name, version, downloads) across all dependents
+    let mut all_pairs: Vec<(String, String, u64)> = Vec::new();
+
+    for dep in &registry_deps {
+        let name = &dep.crate_ref.name;
+        match api::get_version_downloads(name) {
+            Ok(versions) => {
+                // Skip the latest version (already in the list)
+                // The latest is the first one that's not yanked and not prerelease,
+                // but we need to match what the runner will resolve. Skip the first entry
+                // since versions are sorted by downloads (most popular first).
+                // Instead, skip versions that match the existing entry.
+                let existing_version = match &dep.crate_ref.version {
+                    Version::Semver(v) => Some(v.as_str()),
+                    _ => None,
+                };
+
+                for v in &versions {
+                    // Skip the version already selected (latest)
+                    if existing_version.is_some_and(|ev| ev == v.version) {
+                        continue;
+                    }
+                    all_pairs.push((name.clone(), v.version.clone(), v.downloads));
+                }
+            }
+            Err(e) => {
+                debug!("Warning: Could not fetch versions for {}: {}", name, e);
+            }
+        }
+    }
+
+    // Sort by downloads descending
+    all_pairs.sort_by_key(|(_name, _ver, downloads)| std::cmp::Reverse(*downloads));
+
+    // Take top Q
+    let selected: Vec<VersionSpec> = all_pairs
+        .into_iter()
+        .take(budget)
+        .map(|(name, version, _downloads)| VersionSpec {
+            crate_ref: VersionedCrate::from_registry(name, version),
+            override_mode: OverrideMode::None,
+            is_baseline: false,
+        })
+        .collect();
+
+    if !selected.is_empty() {
+        eprintln!(
+            "Selected {} additional dependent version(s) by download count (--top-versions {})",
+            selected.len(),
+            budget
+        );
+    }
+
+    Ok(selected)
 }
 
 #[cfg(test)]

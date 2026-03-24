@@ -51,6 +51,13 @@ pub struct CliArgs {
     #[arg(long, value_name = "DIR", num_args = 1..)]
     pub dependent_dir: Vec<PathBuf>,
 
+    /// Budget for additional dependent version slots beyond the guaranteed one-per-dependent
+    /// Each dependent gets its latest version tested. This allocates Q additional version slots
+    /// across all dependents, ranked by download count.
+    /// Example: --top-dependents 5 --top-versions 50
+    #[arg(long, value_name = "Q")]
+    pub top_versions: Option<usize>,
+
     /// Test against specific versions of the base crate (e.g., "0.3.0 4.1.1")
     /// When specified with --path, includes "this" (WIP version) automatically
     /// Supports versions with hyphens: "0.8.0 1.0.0-rc.1 1.0.0-alpha.2"
@@ -198,6 +205,7 @@ mod tests {
             path: None,
             crate_name: None,
             top_dependents: 5,
+            top_versions: None,
             dependents: vec![],
             dependent_paths: vec![],
             dependent_glob: vec![],
@@ -229,6 +237,7 @@ mod tests {
             path: Some(PathBuf::from("./Cargo.toml.test")),
             crate_name: None,
             top_dependents: 5,
+            top_versions: None,
             dependents: vec![],
             dependent_paths: vec![],
             dependent_glob: vec![],
