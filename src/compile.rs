@@ -1241,20 +1241,20 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                         if retry_check.success {
                             let retry_test = compile_crate(crate_path, CompileStep::Test, None)?;
 
-                            if let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
-                                if retry_test.failed() {
-                                    log_failure_with_diagnostics(
-                                        dep_info.name,
-                                        dep_info.version,
-                                        base_crate_name,
-                                        label,
-                                        "cargo test",
-                                        None,
-                                        &retry_test.stdout,
-                                        &retry_test.stderr,
-                                        &retry_test.diagnostics,
-                                    );
-                                }
+                            if let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label)
+                                && retry_test.failed()
+                            {
+                                log_failure_with_diagnostics(
+                                    dep_info.name,
+                                    dep_info.version,
+                                    base_crate_name,
+                                    label,
+                                    "cargo test",
+                                    None,
+                                    &retry_test.stdout,
+                                    &retry_test.stderr,
+                                    &retry_test.diagnostics,
+                                );
                             }
 
                             restore_cargo_toml(crate_path).ok();
@@ -1295,20 +1295,20 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                 }
                 (Some(result), None)
             } else {
-                if result.failed() {
-                    if let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label) {
-                        log_failure_with_diagnostics(
-                            dep_info.name,
-                            dep_info.version,
-                            base_crate_name,
-                            label,
-                            "cargo test",
-                            None,
-                            &result.stdout,
-                            &result.stderr,
-                            &result.diagnostics,
-                        );
-                    }
+                if result.failed()
+                    && let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label)
+                {
+                    log_failure_with_diagnostics(
+                        dep_info.name,
+                        dep_info.version,
+                        base_crate_name,
+                        label,
+                        "cargo test",
+                        None,
+                        &result.stdout,
+                        &result.stderr,
+                        &result.diagnostics,
+                    );
                 }
                 (Some(result), None)
             }
