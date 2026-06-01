@@ -10,6 +10,33 @@ edition = "2024"
 readme = "README.md"
 keywords = ["cargo", "testing", "dependencies", "cargo-subcommand", "cargo-crusader"]
 categories = ["development-tools::cargo-plugins", "development-tools::testing", "command-line-utilities"]
+exclude = [
+    # CI / dev tooling
+    ".github/",
+    ".gitignore",
+    ".gitattributes",
+    ".travis.yml",
+    "Cross.toml",
+    "Dockerfile",
+    "rustfmt.toml",
+    # dev-internal docs (not user-facing)
+    "CLAUDE.md",
+    "BUGFIXES.md",
+    "REFACTORING_COMPLETE.md",
+    "REFACTORING_FOR_TESTABILITY.md",
+    "REGRESSION_TEST_COVERAGE.md",
+    "TESTABILITY_QUICK_START.md",
+    "TEST_GAPS_SUMMARY.md",
+    "github-action.md",
+    "docs/",
+    # generated run artifacts
+    "copter-report.json",
+    "copter-report.md",
+    # test/bench fixtures (downstream users don't build tests)
+    "tests/",
+    "test-crates/",
+    "test-fixtures/",
+]
 # cargo-binstall configuration
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.{ archive-format }"
