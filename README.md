@@ -2,7 +2,7 @@
 
 **Test the downstream impact of Rust crate changes before publishing. Locate regressions and API breakages.**
 
-Test `any versions of your crate and/or a local WIP version` X `any versions of any specified dependents` (defaults to top 10 most popular dependents).
+Test `any versions of your crate and/or a local WIP version` X `any versions of any specified dependents` (defaults to the top 5 most-downloaded dependents).
 
 Let natural version resolution take place `--test-versions "0.8.50 0.8.51"` (to simulate publishing to crates.io)<br/>
 OR use `--force-versions "0.8.52 0.8.53"` to simulate them upgrading to a new version of your crate with an edit of their cargo.toml.
@@ -20,10 +20,53 @@ cargo binstall cargo-copter
 cargo install cargo-copter
 ```
 
-## Test your local crate version against top dependents
+## Invocation
+
+Invoke the binary directly as **`cargo-copter`**:
+
 ```bash
 cd my-crate
-cargo copter --top-dependents 2
+cargo-copter --top-dependents 2
+```
+
+> **Note:** invoke `cargo-copter` (with the hyphen), not `cargo copter` (space). The
+> `cargo <subcommand>` dispatch form is not wired up in this release, so `cargo copter ...`
+> fails with `unexpected argument 'copter' found`. Use `cargo-copter ...` directly.
+
+## Test your local work-in-progress version
+
+There is **no `--wip` flag**. Running `cargo-copter` from your crate's directory (or with
+`--path <DIR>`) and **without** any of `--crate`, `--test-versions`, or `--force-versions`
+is what offers your local WIP version. In that default mode each dependent is tested twice:
+
+1. **baseline** — the latest version of your crate currently published on crates.io
+2. **WIP** — your uncommitted local source (the version in your local `Cargo.toml`)
+
+so you see exactly what your unpublished changes do to each dependent versus what they
+already ship against.
+
+```bash
+cd my-crate
+cargo-copter --top-dependents 2      # baseline (published) + your local WIP, vs top 2 dependents
+```
+
+### Precondition: default dependent discovery needs your crate published
+
+When you don't pass any `--dependent*` flag, dependents are discovered via the **crates.io
+reverse-dependencies API** for your crate. A brand-new crate that has never been published
+(or one that nothing depends on yet) therefore finds **zero** dependents and exits with
+`Configuration error: No dependents to test`.
+
+For an **unpublished** crate, point cargo-copter at local dependents instead — these paths
+are read straight from disk and never touch crates.io:
+
+```bash
+# Unpublished crate: name the local dependents explicitly
+cargo-copter --path . --dependent-paths ~/work/dep-a ~/work/dep-b
+
+# ...or auto-discover local dependents (only crates that actually depend on yours are kept)
+cargo-copter --path . --dependent-dir ~/work/ ~/work/zen/
+cargo-copter --path . --dependent-glob "~/work/*/Cargo.toml"
 ```
 
 ## Example Output
@@ -64,8 +107,8 @@ Passed test                              2               2          -1 → 1
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Fully passing                            2               2          -1 → 1
 
-Markdown report: copter-report.md
-Detailed failure logs: copter-failures.log
+Markdown report: copter-report/report.md
+Detailed failure logs: copter-report/failures.log
 
 💡 To analyze API changes that may have caused regressions:
    cargo install cargo-public-api
@@ -177,18 +220,19 @@ cargo-copter --top-dependents 5 --top-versions 50
 - Always tests the exact version specified
 - Auto-adds patch mode test unless --skip-normal-testing
 
-### Transitive Patch Mode (--patch-transitive)
-- Adds `[patch.crates-io]` to dependent's Cargo.toml
-- Unifies ALL versions of your crate across the entire dependency tree
-- Resolves "multiple versions of crate X" errors
-- Use when dependents have transitive deps that also use your crate
+### Transitive unification (automatic)
+When a forced version produces a "multiple versions of crate X" error — because a dependent
+pulls in your crate both directly and transitively (e.g. testing `rgb` against `image`, which
+depends on `ravif`, which also uses `rgb`) — cargo-copter **automatically retries** with
+`[patch.crates-io]` applied to unify all copies of your crate across the dependency tree. No
+flag is required. Retried rows are tagged in the output:
 
-Example: Testing `rgb` against `image` which depends on `ravif` which also uses `rgb`:
-```bash
-cargo-copter --dependents image --patch-transitive
-```
-Without `--patch-transitive`, `image` might fail with "the trait `AsPixels` is not implemented"
-because `image` uses one version of `rgb` while `ravif` uses another.
+- `[!!]` = auto-patched (needed `[patch.crates-io]` to unify transitive versions)
+- `[!!!]` = deep conflict (still failed even after `[patch.crates-io]`; see the blocking deps)
+
+> The old `--patch-transitive` flag is **deprecated and hidden** — it is now a no-op, since
+> auto-retry handles transitive unification on its own. It is kept only for backwards
+> compatibility and prints a deprecation notice if you pass it.
 
 ## Caching
 
