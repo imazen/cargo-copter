@@ -566,6 +566,49 @@ fn apply_patch_crates_io(crate_path: &Path, crate_name: &str, override_path: &Pa
     Ok(())
 }
 
+/// Recursively discover the local path-dependency siblings of a crate — the
+/// workspace crates it (transitively) path-depends on. Returns `(crate_name,
+/// absolute_dir)` pairs, never including `base_crate_dir` itself.
+///
+/// When the base crate under test path-depends on a sibling (e.g. `magetypes`
+/// path-depends on `archmage`), patching only the base leaves the sibling split
+/// between the dependent's crates.io copy and the base's workspace copy →
+/// `error[E0308]: ... multiple versions of crate archmage`. Patching every
+/// sibling too unifies the whole local workspace for the dependent.
+fn discover_path_dep_siblings(base_crate_dir: &Path) -> Vec<(String, std::path::PathBuf)> {
+    let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut stack = vec![base_crate_dir.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(content) = fs::read_to_string(dir.join("Cargo.toml")) else {
+            continue;
+        };
+        let Ok(doc) = content.parse::<toml_edit::DocumentMut>() else {
+            continue;
+        };
+        for table_name in ["dependencies", "dev-dependencies", "build-dependencies"] {
+            let Some(deps) = doc.get(table_name).and_then(|d| d.as_table()) else {
+                continue;
+            };
+            for (key, item) in deps.iter() {
+                // Only path-dependencies are local workspace siblings.
+                let Some(path_str) = item.get("path").and_then(|p| p.as_str()) else {
+                    continue;
+                };
+                // Honor `package = "..."` renames; otherwise the dep name is the key.
+                let name = item.get("package").and_then(|p| p.as_str()).unwrap_or(key).to_string();
+                let abs = dir.join(path_str);
+                let abs = abs.canonicalize().unwrap_or(abs);
+                if seen.insert(name.clone()) {
+                    out.push((name, abs.clone()));
+                    stack.push(abs); // follow the sibling's own path-deps
+                }
+            }
+        }
+    }
+    out
+}
+
 pub fn compile_crate(
     crate_path: &Path,
     step: CompileStep,
@@ -595,6 +638,20 @@ pub fn compile_crate(
         let config_str = format!("patch.crates-io.{}.path=\"{}\"", crate_name, override_path.display());
         cmd.arg("--config").arg(&config_str);
         debug!("using --config: {}", config_str);
+
+        // Also patch the base crate's local workspace siblings, so a dependent
+        // that ALSO depends on one of them (e.g. magetypes path-depends on
+        // archmage, and the dependent depends on both) resolves a single unified
+        // copy instead of "multiple versions of crate X" (E0308). Unused patches
+        // are harmless (cargo just warns), so this is safe to apply unconditionally.
+        for (sib_name, sib_path) in discover_path_dep_siblings(&override_path) {
+            if sib_name == crate_name {
+                continue;
+            }
+            let sib_config = format!("patch.crates-io.{}.path=\"{}\"", sib_name, sib_path.display());
+            cmd.arg("--config").arg(&sib_config);
+            debug!("using --config (sibling): {}", sib_config);
+        }
     }
 
     cmd.current_dir(crate_path);
@@ -956,19 +1013,29 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
     // 2. Non-forced versions use --config which doesn't modify files
     let override_path_buf = if let Some(override_path) = override_path {
         if force_versions {
-            // FORCE MODE: Must modify Cargo.toml to bypass semver
-            // No backup needed - restore_cargo_toml already has .original saved
-
-            // Replace dependency spec directly (bypasses semver)
+            // FORCE MODE: bypass semver on the dependent's DIRECT dep by
+            // rewriting its manifest spec to the WIP path.
+            // (restore_cargo_toml already saved the .original backup.)
             apply_dependency_override(crate_path, base_crate_name, override_path, DependencyOverrideMode::Force)?;
 
-            // If patch_transitive is also enabled, add [patch.crates-io] for transitive deps
-            if patch_transitive {
-                apply_patch_crates_io(crate_path, base_crate_name, override_path)?;
-                debug!("Applied BOTH force override AND [patch.crates-io] for transitive patching");
-            }
-
-            None // Don't use --config when we modified Cargo.toml
+            // The direct override does NOT reach copies of the base crate (or its
+            // workspace siblings) that the dependent pulls TRANSITIVELY via other
+            // deps — those resolve to crates.io and collide with the WIP ("multiple
+            // versions of crate X", E0308). A manifest [patch.crates-io] can't fix
+            // that either: cargo only honors [patch] in the WORKSPACE ROOT, so for
+            // a dependent that is itself a workspace member it lands in the wrong
+            // manifest and is silently ignored. Route base + siblings through
+            // `--config patch.crates-io` instead (returning Some hands them to
+            // compile_crate's --config path below), which cargo applies at the
+            // build-root level regardless of workspace layout. The WIP version
+            // satisfies the transitive requirement, so the patch applies cleanly.
+            let _ = patch_transitive; // subsumed: --config is always transitive
+            let abs_path = if override_path.is_absolute() {
+                override_path.to_path_buf()
+            } else {
+                env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))?.join(override_path)
+            };
+            Some(abs_path)
         } else {
             // PATCH MODE: Use --config flag (clean, no file modifications)
             let abs_path = if override_path.is_absolute() {

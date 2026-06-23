@@ -23,12 +23,39 @@ pub fn get_crate_info(manifest_path: &Path) -> Result<(String, String), String> 
 
             let version = match t.get("version") {
                 Some(toml::Value::String(s)) => s.clone(),
+                // `version.workspace = true` — inherit from the workspace root's
+                // [workspace.package].version (cargo's inheritance). Without this
+                // a workspace member reads as "0.0.0" and is needlessly FORCE-tested.
+                Some(toml::Value::Table(tbl)) if tbl.get("workspace").and_then(|w| w.as_bool()) == Some(true) => {
+                    resolve_workspace_version(manifest_path).unwrap_or_else(|| "0.0.0".to_string())
+                }
                 _ => "0.0.0".to_string(), // Default if no version
             };
 
             Ok((name, version))
         }
         _ => Err("Missing [package] section in Cargo.toml".to_string()),
+    }
+}
+
+/// Resolve a `version.workspace = true` member by walking up to the workspace
+/// root and reading `[workspace.package].version`.
+fn resolve_workspace_version(manifest_path: &Path) -> Option<String> {
+    let mut dir = manifest_path.parent()?.to_path_buf();
+    loop {
+        if let Ok(s) = load_string(&dir.join("Cargo.toml")) {
+            if let Ok(v) = toml::from_str::<toml::Value>(&s) {
+                if let Some(ver) = v
+                    .get("workspace")
+                    .and_then(|w| w.get("package"))
+                    .and_then(|p| p.get("version"))
+                    .and_then(|ver| ver.as_str())
+                {
+                    return Some(ver.to_string());
+                }
+            }
+        }
+        dir = dir.parent()?.to_path_buf();
     }
 }
 
