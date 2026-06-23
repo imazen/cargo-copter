@@ -1067,12 +1067,13 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
             let extracted = extract_dependency_spec(crate_path, base_crate_name).ok().flatten();
             debug!("Extracted spec (fetch succeeded): {:?} (force={})", extracted, force_versions);
             if extracted.is_none() && !force_versions {
-                panic!(
-                    "Failed to extract dependency spec for '{}' from {:?}. \
-                    This should never happen if fetch succeeded in non-force mode. \
-                    The dependency must exist in the manifest.",
-                    base_crate_name, crate_path
-                );
+                // The fetched dependent declares no dependency on the base crate —
+                // e.g. a historical version released before that dependency was
+                // added. There is nothing to patch or test, so signal a skip
+                // rather than panicking and aborting the whole run.
+                return Err(format!(
+                    "`{base_crate_name}` is not a dependency of this version — skipping"
+                ));
             }
             extracted
         } else {

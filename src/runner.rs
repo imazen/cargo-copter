@@ -39,9 +39,15 @@ where
         // Resolve this specific dependent's version lazily (just before testing it)
         if let Version::Latest = matrix.dependents[idx].crate_ref.version {
             let name = matrix.dependents[idx].crate_ref.name.clone();
-            let latest = version::resolve_latest_version(&name, false)
-                .map_err(|e| format!("Failed to resolve latest version for {}: {}", name, e))?;
-            matrix.dependents[idx].crate_ref.version = Version::Semver(latest);
+            match version::resolve_latest_version(&name, false) {
+                Ok(latest) => matrix.dependents[idx].crate_ref.version = Version::Semver(latest),
+                Err(e) => {
+                    // A reverse-dep with no published versions (yanked, unpublished,
+                    // or path-only) should be skipped, not abort the whole run.
+                    eprintln!("warning: skipping dependent `{name}` — could not resolve a version ({e})");
+                    continue;
+                }
+            }
         }
 
         let dependent_spec = &matrix.dependents[idx];
@@ -58,12 +64,20 @@ where
 
             debug!("Testing BASELINE {} against {}", baseline_spec.crate_ref.display(), dependent.display());
 
-            let execution = run_single_test(baseline_spec, dependent_spec, &matrix)?;
-            TestResult {
-                base_version: baseline_spec.crate_ref.clone(),
-                dependent: dependent.clone(),
-                execution,
-                baseline: None, // Baseline has no comparison
+            match run_single_test(baseline_spec, dependent_spec, &matrix) {
+                Ok(execution) => TestResult {
+                    base_version: baseline_spec.crate_ref.clone(),
+                    dependent: dependent.clone(),
+                    execution,
+                    baseline: None, // Baseline has no comparison
+                },
+                Err(e) => {
+                    // Execution error (not a build failure) — e.g. a historical
+                    // version that predates the base-crate dependency. Skip the
+                    // whole dependent rather than aborting the run.
+                    eprintln!("warning: skipping dependent `{}` — {e}", dependent.display());
+                    continue;
+                }
             }
         };
 
@@ -87,8 +101,18 @@ where
             debug!("Testing {} against {}", base_version.display(), dependent.display());
 
             // Run the three-step test, passing the baseline spec requirement
-            let execution =
-                run_single_test_with_spec(base_spec, dependent_spec, &matrix, baseline_spec_requirement.clone())?;
+            let execution = match run_single_test_with_spec(
+                base_spec,
+                dependent_spec,
+                &matrix,
+                baseline_spec_requirement.clone(),
+            ) {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("warning: skipping {} for `{}` — {e}", base_version.display(), dependent.display());
+                    continue;
+                }
+            };
 
             let result = TestResult {
                 base_version: base_version.clone(),
