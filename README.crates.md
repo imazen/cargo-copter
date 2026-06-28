@@ -1,4 +1,6 @@
-# cargo-copter [![CI](https://img.shields.io/github/actions/workflow/status/imazen/cargo-copter/ci.yml?style=flat-square&label=CI)](https://github.com/imazen/cargo-copter/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/cargo-copter?style=flat-square)](https://crates.io/crates/cargo-copter) [![license](https://img.shields.io/crates/l/cargo-copter?style=flat-square)](#license)
+<!-- GENERATED FROM README.md by zenutils gen-readme-crates.sh — DO NOT EDIT. -->
+
+# cargo-copter
 
 **Test the downstream impact of a Rust crate change before you publish it** — catch regressions and API breakages in the crates that depend on yours.
 
