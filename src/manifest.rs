@@ -43,17 +43,15 @@ pub fn get_crate_info(manifest_path: &Path) -> Result<(String, String), String> 
 fn resolve_workspace_version(manifest_path: &Path) -> Option<String> {
     let mut dir = manifest_path.parent()?.to_path_buf();
     loop {
-        if let Ok(s) = load_string(&dir.join("Cargo.toml")) {
-            if let Ok(v) = toml::from_str::<toml::Value>(&s) {
-                if let Some(ver) = v
-                    .get("workspace")
-                    .and_then(|w| w.get("package"))
-                    .and_then(|p| p.get("version"))
-                    .and_then(|ver| ver.as_str())
-                {
-                    return Some(ver.to_string());
-                }
-            }
+        if let Ok(s) = load_string(&dir.join("Cargo.toml"))
+            && let Ok(v) = toml::from_str::<toml::Value>(&s)
+            && let Some(ver) = v
+                .get("workspace")
+                .and_then(|w| w.get("package"))
+                .and_then(|p| p.get("version"))
+                .and_then(|ver| ver.as_str())
+        {
+            return Some(ver.to_string());
         }
         dir = dir.parent()?.to_path_buf();
     }

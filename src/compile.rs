@@ -1071,9 +1071,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                 // e.g. a historical version released before that dependency was
                 // added. There is nothing to patch or test, so signal a skip
                 // rather than panicking and aborting the whole run.
-                return Err(format!(
-                    "`{base_crate_name}` is not a dependency of this version — skipping"
-                ));
+                return Err(format!("`{base_crate_name}` is not a dependency of this version — skipping"));
             }
             extracted
         } else {
