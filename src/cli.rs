@@ -133,7 +133,11 @@ pub struct CliArgs {
 impl CliArgs {
     /// Parse command-line arguments
     pub fn parse_args() -> Self {
-        let mut args = CliArgs::parse();
+        // Support both invocation forms: `cargo-copter ...` (direct) and
+        // `cargo copter ...` (cargo subcommand dispatch, which passes the
+        // subcommand name as the first argument — drop it before parsing).
+        let argv = std::env::args().enumerate().filter(|(i, a)| !(*i == 1 && a == "copter")).map(|(_, a)| a);
+        let mut args = CliArgs::parse_from(argv);
 
         // Split test_versions on whitespace to support quoted lists like '0.8.51 0.8.91-alpha.3'
         args.test_versions =

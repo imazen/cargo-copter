@@ -5,6 +5,14 @@ All notable changes to cargo-copter are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- `cargo copter ...` (the cargo-subcommand space form) now works: the leading
+  `copter` argument cargo passes to external subcommands is stripped before
+  parsing. The direct `cargo-copter ...` form is unchanged. READMEs reconciled:
+  installed binaries accept both forms; a locally compiled binary invoked by
+  path is always the direct form.
+
 ### Security
 
 - `tar` 0.4.45 → 0.4.46. The lockfile was sitting on 0.4.45, which is inside the

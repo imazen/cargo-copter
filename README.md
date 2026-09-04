@@ -19,17 +19,18 @@ cargo binstall cargo-copter   # prebuilt binary
 cargo install cargo-copter    # build from source
 ```
 
-Run it from your crate's directory, invoking the binary as **`cargo-copter`** (with the hyphen):
+Run it from your crate's directory. Installed (via `cargo install`/`cargo binstall`),
+both invocation forms work:
 
 ```bash
 cd my-crate
-cargo-copter --top-dependents 2
+cargo copter --top-dependents 2     # cargo subcommand dispatch
+cargo-copter --top-dependents 2     # direct binary invocation
 ```
 
-> **Note:** invoke `cargo-copter` (hyphen), not `cargo copter` (space). The
-> `cargo <subcommand>` dispatch form is not wired up in this release, so
-> `cargo copter ...` fails with `unexpected argument 'copter' found`. Use
-> `cargo-copter ...` directly.
+> **Note:** a locally compiled binary invoked by path (`./target/release/cargo-copter`,
+> or `cargo run --`) is always the direct form — no `cargo` dispatch is involved, so
+> use it exactly like `cargo-copter ...`.
 
 ## Test your local work-in-progress version
 
