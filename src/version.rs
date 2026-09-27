@@ -81,15 +81,45 @@ pub fn resolve_latest_version(crate_name: &str, include_prerelease: bool) -> Res
 
     let krate = api::get_client().get_crate(crate_name).map_err(|e| format!("Failed to fetch crate info: {}", e))?;
 
-    // Filter and sort versions
-    let mut versions: Vec<Version> = krate
-        .versions
-        .iter()
-        .filter_map(|r| Version::parse(&r.num).ok())
-        .filter(|v| include_prerelease || v.pre.is_empty()) // Filter pre-releases unless requested
-        .collect();
+    select_latest_version(krate.versions.iter().map(|r| (r.num.as_str(), r.yanked)), include_prerelease)
+}
 
-    versions.sort();
+fn select_latest_version<'a>(
+    versions: impl IntoIterator<Item = (&'a str, bool)>,
+    include_prerelease: bool,
+) -> Result<String, String> {
+    versions
+        .into_iter()
+        .filter(|(_, yanked)| !yanked)
+        .filter_map(|(num, _)| Version::parse(num).ok())
+        .filter(|v| include_prerelease || v.pre.is_empty())
+        .max()
+        .map(|v| v.to_string())
+        .ok_or_else(|| "No non-yanked versions found matching the requested release channel".to_string())
+}
 
-    versions.pop().map(|v| v.to_string()).ok_or_else(|| "No versions found".to_string())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latest_uses_semver_order_and_excludes_yanked_releases() {
+        let versions = [
+            ("0.6.9", false),
+            ("0.7.0", true),
+            ("0.6.12", false),
+            ("0.8.0-alpha.1", false),
+            ("0.9.0-beta.1", true),
+            ("invalid", false),
+        ];
+        assert_eq!(select_latest_version(versions, false).unwrap(), "0.6.12");
+        assert_eq!(select_latest_version(versions, true).unwrap(), "0.8.0-alpha.1");
+    }
+
+    #[test]
+    fn latest_does_not_fall_back_to_yanked_or_prerelease() {
+        assert!(select_latest_version([("1.0.0", true)], true).is_err());
+        assert!(select_latest_version([("1.0.0-beta.1", false)], false).is_err());
+        assert!(select_latest_version([], false).is_err());
+    }
 }
