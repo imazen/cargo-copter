@@ -5,6 +5,18 @@ All notable changes to cargo-copter are documented here. This project adheres to
 
 ## [Unreleased]
 
+### QUEUED BREAKING CHANGES
+
+None.
+
+### Fixed
+
+- Automatic `latest` and `latest-preview` selection excludes yanked releases; explicit version requests remain available (d6b1566).
+- Forced overrides retain workspace features and default-feature settings, including renamed and target-specific dependency entries (36eda128).
+- Restore local manifests and workspace lockfiles after successful and failed audits; stale `Cargo.toml.original.txt` files no longer overwrite local edits (36eda128).
+- Verify resolved versions against the tested workspace member with the build's patch configuration, before restoring files (36eda128).
+- Baseline/WIP CLI regression testing now requires a passing baseline and a real WIP compilation failure, using an edition-compatible fixture MSRV (27203a5).
+
 ### Added
 
 - `cargo copter ...` (the cargo-subcommand space form) now works: the leading

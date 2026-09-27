@@ -66,7 +66,17 @@ fn inherited_features_survive_and_sibling_baseline_is_clean() {
         .unwrap();
     assert!(offered.is_success(), "{offered:#?}");
     assert_eq!(offered.actual_version.as_deref(), Some("1.0.1"));
-    assert!(offered.check.unwrap().stdout.contains(&wip.display().to_string()));
+    assert!(
+        offered.check.unwrap().stdout.lines().any(|line| {
+            let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else { return false };
+            message
+                .get("target")
+                .and_then(|t| t.get("src_path"))
+                .and_then(|p| p.as_str())
+                .is_some_and(|p| Path::new(p).starts_with(&wip))
+        }),
+        "The check must compile the WIP source, not just report its version"
+    );
     assert_original(&member, &manifest, Some(&lock));
 
     let second = fixture.path().join("workspace/second");

@@ -435,3 +435,17 @@ The codebase recently underwent a major refactoring from 1546 lines in main.rs t
 
 The `bridge.rs` module provides compatibility with legacy `OfferedRow` types during the transition period.
 - memorize always read in all rust files before refactoring anything
+## Known Bugs — downstream audit fixes (2026-09-27)
+
+The bugs observed at 2d50bf89 are fixed: yanked automatic version selection
+(d6b1566), loss of inherited workspace features, early-return manifest leaks,
+and metadata selecting another workspace member's version (36eda128).
+Regression cases are in `src/version.rs`, `src/compile_test.rs`, and
+`tests/default_baseline_wip_test.rs`. See
+[the verified reproductions](docs/DOWNSTREAM-AUDIT-FIXES.md).
+
+Restoration covers normal returns, errors, and Rust unwinding. Abrupt process
+termination does not run the restoration guard; use disposable copies when
+interrupting audits. Do not restore a local checkout from a legacy
+`Cargo.toml.original.txt`: it can predate the user's current edits. That recovery
+mechanism is restricted to immutable registry staging entries.
