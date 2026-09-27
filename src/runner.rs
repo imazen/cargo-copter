@@ -186,6 +186,7 @@ fn run_single_test_with_spec(
                     .map_err(|e| format!("Failed to unpack {}: {}", dependent.name, e))?;
             }
 
+            compile::restore_cargo_toml(&dest)?;
             dest
         }
         CrateSource::Git { .. } => {

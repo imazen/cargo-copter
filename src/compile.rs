@@ -212,8 +212,8 @@ fn write_failure_to_log(
     // Unlock is automatic when file goes out of scope
 }
 
-/// Restore Cargo.toml from the original backup before testing
-/// This prevents contamination between test runs in the cached staging directory
+/// Restore an immutable registry-cache manifest from its original backup.
+/// Never use this on a local checkout: its backup may predate user edits.
 ///
 /// CRITICAL: This is idempotent and Ctrl+C safe. If a backup exists from a previous
 /// (possibly interrupted) run, we restore from it rather than overwriting it.
@@ -283,13 +283,16 @@ impl CompileResult {
 
 /// Verify that the correct version of a dependency is being used
 /// Returns the actual version found, or None if not found
-fn verify_dependency_version(crate_path: &Path, dep_name: &str) -> Option<String> {
+fn verify_dependency_version(
+    crate_path: &Path,
+    dep_name: &str,
+    override_spec: Option<(&str, &Path)>,
+) -> Option<String> {
     debug!("Verifying {} version in {:?}", dep_name, crate_path);
 
     // Try using cargo metadata which works better with path dependencies
     // Don't use --no-deps because we need to see resolved dependencies
-    let output =
-        Command::new("cargo").args(["metadata", "--format-version=1"]).current_dir(crate_path).output().ok()?;
+    let output = cargo_metadata(crate_path, override_spec).ok()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -310,44 +313,21 @@ fn verify_dependency_version(crate_path: &Path, dep_name: &str) -> Option<String
     if let Some(resolve) = metadata.get("resolve")
         && let Some(nodes) = resolve.get("nodes").and_then(|n| n.as_array())
     {
-        for node in nodes {
+        let root = resolve.get("root").and_then(|v| v.as_str())?;
+        for node in nodes.iter().filter(|n| n.get("id").and_then(|v| v.as_str()) == Some(root)) {
             if let Some(deps) = node.get("deps").and_then(|d| d.as_array()) {
                 for dep in deps {
-                    if let Some(name) = dep.get("name").and_then(|n| n.as_str())
-                        && name == dep_name
-                        && let Some(pkg) = dep.get("pkg").and_then(|p| p.as_str())
+                    if let Some(pkg) = dep.get("pkg").and_then(|p| p.as_str())
+                        && let Some(package) =
+                            metadata.get("packages").and_then(|p| p.as_array()).and_then(|packages| {
+                                packages.iter().find(|p| p.get("id").and_then(|v| v.as_str()) == Some(pkg))
+                            })
+                        && package.get("name").and_then(|v| v.as_str()) == Some(dep_name)
                     {
-                        // pkg format: "registry+https://...#crate-name@version" or "path+file://...#crate-name@version"
-                        // Extract version by splitting on "#" then "@"
-                        if let Some(after_hash) = pkg.split('#').nth(1)
-                            && let Some(version) = after_hash.split('@').nth(1)
-                        {
-                            debug!("✓ Verified {} version: {}", dep_name, version);
-                            return Some(version.to_string());
-                        }
+                        return package.get("version").and_then(|v| v.as_str()).map(str::to_owned);
                     }
                 }
             }
-        }
-    }
-
-    // Fallback: Check packages array for the dependency (may pick wrong version if multiple exist)
-    let packages = match metadata.get("packages").and_then(|p| p.as_array()) {
-        Some(p) => p,
-        None => {
-            debug!("No 'packages' in metadata");
-            return None;
-        }
-    };
-
-    // Find the package with matching name
-    for pkg in packages {
-        if let Some(name) = pkg.get("name").and_then(|n| n.as_str())
-            && name == dep_name
-            && let Some(version) = pkg.get("version").and_then(|v| v.as_str())
-        {
-            debug!("✓ Verified {} version: {}", dep_name, version);
-            return Some(version.to_string());
         }
     }
 
@@ -357,15 +337,15 @@ fn verify_dependency_version(crate_path: &Path, dep_name: &str) -> Option<String
 
 /// Extract the version requirement spec for a dependency using cargo metadata
 /// Returns None if the dependency is not found
-fn extract_dependency_spec(crate_path: &Path, dep_name: &str) -> Result<Option<String>, String> {
+fn extract_dependency_spec(
+    crate_path: &Path,
+    dep_name: &str,
+    override_spec: Option<(&str, &Path)>,
+) -> Result<Option<String>, String> {
     debug!("Extracting spec for '{}' from {:?}", dep_name, crate_path);
 
     // Run cargo metadata to get dependency specs
-    let output = Command::new("cargo")
-        .args(["metadata", "--format-version=1"])
-        .current_dir(crate_path)
-        .output()
-        .map_err(|e| format!("Failed to run cargo metadata: {}", e))?;
+    let output = cargo_metadata(crate_path, override_spec)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -464,47 +444,21 @@ fn apply_dependency_override(
     // Parse as TOML
     let mut doc: toml_edit::DocumentMut = content.parse().map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
 
+    let workspace_manifest = workspace_manifest(crate_path)?;
+    let workspace_content = fs::read_to_string(workspace_manifest).map_err(|e| e.to_string())?;
+    let workspace_doc: toml_edit::DocumentMut = workspace_content.parse().map_err(|e| format!("{e}"))?;
+    let workspace_deps = workspace_doc.get("workspace").and_then(|w| w.get("dependencies"));
+
     match mode {
         DependencyOverrideMode::Force => {
-            // Update dependency in all sections (force mode - replaces the spec entirely)
-            let sections = vec!["dependencies", "dev-dependencies", "build-dependencies"];
-
-            for section in sections {
-                if let Some(deps) = doc.get_mut(section).and_then(|s| s.as_table_mut())
-                    && let Some(dep) = deps.get_mut(dep_name)
-                {
-                    debug!("Force-replacing {} in [{}] with path {:?}", dep_name, section, override_path);
-
-                    // Preserve existing fields (optional, default-features, features, etc.)
-                    let mut new_dep = toml_edit::InlineTable::new();
-                    new_dep.insert("path", override_path.display().to_string().into());
-
-                    // Copy fields from original dependency if it's a table
-                    if let Some(old_table) = dep.as_inline_table() {
-                        // Preserve important fields
-                        for key in ["optional", "default-features", "features", "package"] {
-                            if let Some(value) = old_table.get(key) {
-                                new_dep.insert(key, value.clone());
-                                debug!("Preserving field '{}' = {:?}", key, value);
-                            }
-                        }
-                    } else if let Some(old_table) = dep.as_table_like() {
-                        // Handle table-like dependencies
-                        for key in ["optional", "default-features", "features", "package"] {
-                            if let Some(value) = old_table.get(key)
-                                && let Some(v) = value.as_value()
-                            {
-                                new_dep.insert(key, v.clone());
-                                debug!("Preserving field '{}' = {:?}", key, v);
-                            }
-                        }
+            override_dependency_sections(doc.as_table_mut(), workspace_deps, dep_name, &override_path)?;
+            if let Some(targets) = doc.get_mut("target").and_then(|t| t.as_table_mut()) {
+                for (_, target) in targets.iter_mut() {
+                    if let Some(table) = target.as_table_mut() {
+                        override_dependency_sections(table, workspace_deps, dep_name, &override_path)?;
                     }
-
-                    *dep = toml_edit::Item::Value(toml_edit::Value::InlineTable(new_dep));
                 }
             }
-
-            debug!("Force-replaced {} dependency spec with path: {}", dep_name, override_path.display());
         }
     }
 
@@ -513,6 +467,156 @@ fn apply_dependency_override(
     file.write_all(doc.to_string().as_bytes()).map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
 
     Ok(())
+}
+
+/// Materialize inherited settings before replacing a dependency's source. Features
+/// are additive; default-features comes from the workspace unless enabled locally.
+fn override_dependency_sections(
+    table: &mut toml_edit::Table,
+    workspace_deps: Option<&toml_edit::Item>,
+    dep_name: &str,
+    override_path: &Path,
+) -> Result<(), String> {
+    for section in ["dependencies", "dev-dependencies", "build-dependencies"] {
+        let Some(deps) = table.get_mut(section).and_then(|d| d.as_table_mut()) else { continue };
+        for (key, dep) in deps.iter_mut() {
+            let inherited = dep.get("workspace").and_then(|v| v.as_bool()) == Some(true);
+            let workspace_dep = if inherited {
+                Some(
+                    workspace_deps
+                        .and_then(|deps| deps.get(key.get()))
+                        .ok_or_else(|| format!("Missing workspace dependency `{key}`"))?,
+                )
+            } else {
+                None
+            };
+            let package = dep
+                .get("package")
+                .or_else(|| workspace_dep.and_then(|d| d.get("package")))
+                .and_then(|v| v.as_str())
+                .unwrap_or(key.get());
+            if package != dep_name {
+                continue;
+            }
+
+            let mut replacement = toml_edit::InlineTable::new();
+            replacement.insert("path", override_path.display().to_string().into());
+            for source in workspace_dep.into_iter().chain(std::iter::once(&*dep)) {
+                for field in ["optional", "default-features", "package"] {
+                    if let Some(value) = source.get(field).and_then(|v| v.as_value()) {
+                        replacement.insert(field, value.clone());
+                    }
+                }
+            }
+            if let Some(workspace_dep) = workspace_dep {
+                let defaults = workspace_dep.get("default-features").and_then(|v| v.as_bool()).unwrap_or(true)
+                    || dep.get("default-features").and_then(|v| v.as_bool()).unwrap_or(false);
+                replacement.insert("default-features", defaults.into());
+            }
+            let mut features = toml_edit::Array::new();
+            for source in workspace_dep.into_iter().chain(std::iter::once(&*dep)) {
+                if let Some(values) = source.get("features").and_then(|v| v.as_array()) {
+                    for feature in values.iter() {
+                        if !features.iter().any(|v| v.as_str() == feature.as_str()) {
+                            features.push(feature.clone());
+                        }
+                    }
+                }
+            }
+            if !features.is_empty() {
+                replacement.insert("features", features.into());
+            }
+            *dep = toml_edit::value(replacement);
+        }
+    }
+    Ok(())
+}
+
+/// Ask Cargo for the actual root, including explicit package.workspace paths and
+/// standalone packages. This does not resolve or fetch dependencies.
+fn workspace_manifest(crate_path: &Path) -> Result<PathBuf, String> {
+    let output = Command::new("cargo")
+        .args(["locate-project", "--workspace", "--message-format=plain"])
+        .current_dir(crate_path)
+        .output()
+        .map_err(|e| format!("Failed to locate workspace: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("Failed to locate workspace: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+    Ok(PathBuf::from(String::from_utf8_lossy(&output.stdout).trim()))
+}
+
+struct FileSnapshot {
+    path: PathBuf,
+    contents: Option<Vec<u8>>,
+}
+
+impl FileSnapshot {
+    fn capture(path: PathBuf) -> Result<Self, String> {
+        let contents = match fs::read(&path) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(format!("Failed to snapshot {}: {e}", path.display())),
+        };
+        Ok(Self { path, contents })
+    }
+
+    fn restore(&self) -> Result<(), String> {
+        let result = match &self.contents {
+            Some(bytes) => fs::write(&self.path, bytes),
+            None => match fs::remove_file(&self.path) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                result => result,
+            },
+        };
+        result.map_err(|e| format!("Failed to restore {}: {e}", self.path.display()))
+    }
+}
+
+/// Scope all temporary manifest and lockfile edits to one baseline/offered run.
+/// Normal errors propagate restoration failures; Drop also covers unwinding.
+struct TestFiles {
+    manifest: FileSnapshot,
+    lock: FileSnapshot,
+    restored: bool,
+}
+
+impl TestFiles {
+    fn capture(crate_path: &Path) -> Result<Self, String> {
+        let root = workspace_manifest(crate_path)?;
+        Ok(Self {
+            manifest: FileSnapshot::capture(crate_path.join("Cargo.toml"))?,
+            lock: FileSnapshot::capture(root.with_file_name("Cargo.lock"))?,
+            restored: false,
+        })
+    }
+
+    fn reset_for_retry(&self) -> Result<(), String> {
+        self.manifest.restore()?;
+        match fs::remove_file(&self.lock.path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            result => result.map_err(|e| format!("Failed to clear temporary lockfile: {e}")),
+        }
+    }
+
+    fn restore(&mut self) -> Result<(), String> {
+        // Attempt both restorations even if one fails.
+        let manifest = self.manifest.restore();
+        let lock = self.lock.restore();
+        manifest.and(lock)?;
+        self.restored = true;
+        Ok(())
+    }
+}
+
+impl Drop for TestFiles {
+    fn drop(&mut self) {
+        if !self.restored
+            && let Err(e) = self.restore()
+        {
+            eprintln!("{e}");
+        }
+    }
 }
 
 /// Apply a [patch.crates-io] section to Cargo.toml to patch ALL transitive dependencies
@@ -609,23 +713,7 @@ fn discover_path_dep_siblings(base_crate_dir: &Path) -> Vec<(String, std::path::
     out
 }
 
-pub fn compile_crate(
-    crate_path: &Path,
-    step: CompileStep,
-    override_spec: Option<(&str, &Path)>,
-) -> Result<CompileResult, String> {
-    debug!("compiling {:?} with step {:?}", crate_path, step);
-
-    // Run the cargo command with JSON output for better error extraction
-    let start = Instant::now();
-    let mut cmd = Command::new("cargo");
-    cmd.arg(step.cargo_subcommand());
-
-    // Add --message-format=json for check and test (not fetch)
-    if step != CompileStep::Fetch {
-        cmd.arg("--message-format=json");
-    }
-
+fn configure_override(cmd: &mut Command, override_spec: Option<(&str, &Path)>) -> Result<(), String> {
     // If override is provided, use --config flag instead of creating .cargo/config file
     if let Some((crate_name, override_path)) = override_spec {
         // Convert to absolute path if needed
@@ -653,6 +741,35 @@ pub fn compile_crate(
             debug!("using --config (sibling): {}", sib_config);
         }
     }
+
+    Ok(())
+}
+
+fn cargo_metadata(crate_path: &Path, override_spec: Option<(&str, &Path)>) -> Result<std::process::Output, String> {
+    let mut cmd = Command::new("cargo");
+    cmd.args(["metadata", "--format-version=1"]).current_dir(crate_path);
+    configure_override(&mut cmd, override_spec)?;
+    cmd.output().map_err(|e| format!("Failed to execute cargo metadata: {e}"))
+}
+
+pub fn compile_crate(
+    crate_path: &Path,
+    step: CompileStep,
+    override_spec: Option<(&str, &Path)>,
+) -> Result<CompileResult, String> {
+    debug!("compiling {:?} with step {:?}", crate_path, step);
+
+    // Run the cargo command with JSON output for better error extraction
+    let start = Instant::now();
+    let mut cmd = Command::new("cargo");
+    cmd.arg(step.cargo_subcommand());
+
+    // Add --message-format=json for check and test (not fetch)
+    if step != CompileStep::Fetch {
+        cmd.arg("--message-format=json");
+    }
+
+    configure_override(&mut cmd, override_spec)?;
 
     cmd.current_dir(crate_path);
 
@@ -963,6 +1080,16 @@ impl<'a> TestConfig<'a> {
 /// - Check only runs if fetch succeeds (and !skip_check)
 /// - Test only runs if check succeeds (and !skip_test)
 pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String> {
+    let mut files = TestFiles::capture(config.crate_path)?;
+    let result = run_three_step_ict_inner(config, &files);
+    match (result, files.restore()) {
+        (result, Ok(())) => result,
+        (Ok(_), Err(cleanup)) => Err(cleanup),
+        (Err(error), Err(cleanup)) => Err(format!("{error}; {cleanup}")),
+    }
+}
+
+fn run_three_step_ict_inner(config: TestConfig, files: &TestFiles) -> Result<ThreeStepResult, String> {
     let TestConfig {
         crate_path,
         base_crate_name,
@@ -992,15 +1119,9 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         debug!("BASELINE MODE: no override, testing natural resolution");
     }
 
-    // Always restore Cargo.toml from original backup to prevent contamination
-    restore_cargo_toml(crate_path)?;
-
-    // Always delete Cargo.lock to force fresh dependency resolution
-    let lock_file = crate_path.join("Cargo.lock");
-    if lock_file.exists() {
-        debug!("Deleting Cargo.lock to force dependency resolution");
-        fs::remove_file(&lock_file).map_err(|e| format!("Failed to remove Cargo.lock: {}", e))?;
-    }
+    // Start from the current manifest, never a stale backup from an earlier run.
+    // Fresh resolution uses the workspace lockfile, restored on every exit.
+    files.reset_for_retry()?;
 
     // Setup: Choose patching strategy based on mode
     // For FORCE mode: Modify Cargo.toml to bypass semver (direct dependency)
@@ -1015,7 +1136,6 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         if force_versions {
             // FORCE MODE: bypass semver on the dependent's DIRECT dep by
             // rewriting its manifest spec to the WIP path.
-            // (restore_cargo_toml already saved the .original backup.)
             apply_dependency_override(crate_path, base_crate_name, override_path, DependencyOverrideMode::Force)?;
 
             // The direct override does NOT reach copies of the base crate (or its
@@ -1058,13 +1178,14 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
     let fetch = compile_crate(crate_path, CompileStep::Fetch, override_spec)?;
 
     // Verify the actual version after fetch
-    let actual_version = if fetch.success { verify_dependency_version(crate_path, base_crate_name) } else { None };
+    let actual_version =
+        if fetch.success { verify_dependency_version(crate_path, base_crate_name, override_spec) } else { None };
 
     // Extract original requirement spec from metadata if not provided
     let original_requirement = if original_requirement.is_none() {
         if fetch.success {
             // Fetch succeeded - extract from metadata
-            let extracted = extract_dependency_spec(crate_path, base_crate_name).ok().flatten();
+            let extracted = extract_dependency_spec(crate_path, base_crate_name, override_spec).ok().flatten();
             debug!("Extracted spec (fetch succeeded): {:?} (force={})", extracted, force_versions);
             if extracted.is_none() && !force_versions {
                 // The fetched dependent declares no dependency on the base crate —
@@ -1137,18 +1258,12 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
             let combined_output = format!("{}\n{}", result.stdout, result.stderr);
             if force_versions
                 && (has_multiple_version_conflict(&combined_output)
-                    || has_multiple_resolved_versions(crate_path, base_crate_name))
+                    || has_multiple_resolved_versions(crate_path, base_crate_name, override_spec))
             {
                 debug!("Multi-version conflict detected, attempting auto-retry with [patch.crates-io]");
 
                 // Restore Cargo.toml and apply both force AND patch.crates-io
-                restore_cargo_toml(crate_path)?;
-
-                // Delete Cargo.lock again for fresh resolution
-                let lock_file = crate_path.join("Cargo.lock");
-                if lock_file.exists() {
-                    let _ = fs::remove_file(&lock_file);
-                }
+                files.reset_for_retry()?;
 
                 // Apply force override
                 if let Some(override_path) = override_path {
@@ -1164,16 +1279,19 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                 }
 
                 // Retry fetch and check
-                let retry_fetch = compile_crate(crate_path, CompileStep::Fetch, None)?;
+                let retry_fetch = compile_crate(crate_path, CompileStep::Fetch, override_spec)?;
                 if retry_fetch.success {
-                    let retry_check = compile_crate(crate_path, CompileStep::Check, None)?;
+                    let retry_check = compile_crate(crate_path, CompileStep::Check, override_spec)?;
                     if retry_check.success {
                         // Auto-retry succeeded! Continue with test step
                         debug!("Auto-retry with [patch.crates-io] succeeded!");
 
                         // Run test if not skipped
-                        let test =
-                            if !skip_test { Some(compile_crate(crate_path, CompileStep::Test, None)?) } else { None };
+                        let test = if !skip_test {
+                            Some(compile_crate(crate_path, CompileStep::Test, override_spec)?)
+                        } else {
+                            None
+                        };
 
                         // Log test failure if needed
                         if let Some(ref test_result) = test
@@ -1193,15 +1311,14 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                             );
                         }
 
-                        // Cleanup and return success with Patch depth
-                        restore_cargo_toml(crate_path).ok();
-                        let all_crate_versions = extract_all_crate_versions(crate_path, base_crate_name);
+                        // Collect metadata before the outer wrapper restores the files.
+                        let all_crate_versions = extract_all_crate_versions(crate_path, base_crate_name, override_spec);
 
                         return Ok(ThreeStepResult {
                             fetch: retry_fetch,
                             check: Some(retry_check),
                             test,
-                            actual_version: verify_dependency_version(crate_path, base_crate_name),
+                            actual_version: verify_dependency_version(crate_path, base_crate_name, override_spec),
                             expected_version: expected_version.clone(),
                             forced_version: true,
                             original_requirement: original_requirement.clone(),
@@ -1224,7 +1341,6 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                         vec![]
                     };
 
-                    restore_cargo_toml(crate_path).ok();
                     return Ok(ThreeStepResult {
                         fetch: retry_fetch,
                         check: Some(retry_check),
@@ -1240,7 +1356,6 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                 }
                 // Retry fetch failed - return original failure
                 debug!("Auto-retry fetch failed");
-                restore_cargo_toml(crate_path).ok();
             }
 
             // Check failed - stop here with dash for test
@@ -1277,7 +1392,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
             let result = compile_crate(crate_path, CompileStep::Test, override_spec)?;
             if result.failed() && force_versions {
                 // Check if there are multiple resolved versions in the dep tree
-                let multi_version_in_tree = has_multiple_resolved_versions(crate_path, base_crate_name);
+                let multi_version_in_tree = has_multiple_resolved_versions(crate_path, base_crate_name, override_spec);
                 let combined_output = format!("{}\n{}", result.stdout, result.stderr);
                 let multi_version_in_output = has_multiple_version_conflict(&combined_output);
 
@@ -1288,11 +1403,7 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                     );
 
                     // Restore Cargo.toml and apply both force AND patch.crates-io
-                    restore_cargo_toml(crate_path)?;
-                    let lock_file = crate_path.join("Cargo.lock");
-                    if lock_file.exists() {
-                        let _ = fs::remove_file(&lock_file);
-                    }
+                    files.reset_for_retry()?;
 
                     if let Some(op) = override_path {
                         apply_dependency_override(crate_path, base_crate_name, op, DependencyOverrideMode::Force)?;
@@ -1301,11 +1412,11 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                     }
 
                     // Retry fetch + check + test
-                    let retry_fetch = compile_crate(crate_path, CompileStep::Fetch, None)?;
+                    let retry_fetch = compile_crate(crate_path, CompileStep::Fetch, override_spec)?;
                     if retry_fetch.success {
-                        let retry_check = compile_crate(crate_path, CompileStep::Check, None)?;
+                        let retry_check = compile_crate(crate_path, CompileStep::Check, override_spec)?;
                         if retry_check.success {
-                            let retry_test = compile_crate(crate_path, CompileStep::Test, None)?;
+                            let retry_test = compile_crate(crate_path, CompileStep::Test, override_spec)?;
 
                             if let (Some(dep_info), Some(label)) = (dependent_info.as_ref(), test_label)
                                 && retry_test.failed()
@@ -1323,14 +1434,14 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                                 );
                             }
 
-                            restore_cargo_toml(crate_path).ok();
-                            let all_crate_versions = extract_all_crate_versions(crate_path, base_crate_name);
+                            let all_crate_versions =
+                                extract_all_crate_versions(crate_path, base_crate_name, override_spec);
 
                             return Ok(ThreeStepResult {
                                 fetch: retry_fetch,
                                 check: Some(retry_check),
                                 test: Some(retry_test),
-                                actual_version: verify_dependency_version(crate_path, base_crate_name),
+                                actual_version: verify_dependency_version(crate_path, base_crate_name, override_spec),
                                 expected_version: expected_version.clone(),
                                 forced_version: true,
                                 original_requirement: original_requirement.clone(),
@@ -1340,9 +1451,8 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
                         }
                     }
 
-                    // Retry failed, restore and fall through with original result
+                    // Retry failed; the outer wrapper restores files after collecting the result.
                     debug!("Test auto-retry with [patch.crates-io] failed");
-                    restore_cargo_toml(crate_path).ok();
                 }
 
                 // Log original failure
@@ -1385,14 +1495,9 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
         (None, None)
     };
 
-    // Cleanup: Always restore Cargo.toml to original state
-    // This handles both FORCE mode (where we modified it) and ensures clean state
-    restore_cargo_toml(crate_path).ok(); // Ignore errors on cleanup
-    debug!("Restored Cargo.toml to original state");
-
     // Extract all versions of the base crate from the dependency tree (if fetch succeeded)
     let all_crate_versions =
-        if fetch.success { extract_all_crate_versions(crate_path, base_crate_name) } else { vec![] };
+        if fetch.success { extract_all_crate_versions(crate_path, base_crate_name, override_spec) } else { vec![] };
 
     // Determine patch depth based on mode
     let patch_depth = if force_versions && patch_transitive {
@@ -1419,8 +1524,8 @@ pub fn run_three_step_ict(config: TestConfig) -> Result<ThreeStepResult, String>
 /// Check if the dependency tree has multiple distinct resolved versions of a crate.
 /// This detects multi-version conflicts even when the compiler error message
 /// doesn't explicitly mention "multiple different versions of crate".
-fn has_multiple_resolved_versions(crate_dir: &Path, crate_name: &str) -> bool {
-    let all_versions = extract_all_crate_versions(crate_dir, crate_name);
+fn has_multiple_resolved_versions(crate_dir: &Path, crate_name: &str, override_spec: Option<(&str, &Path)>) -> bool {
+    let all_versions = extract_all_crate_versions(crate_dir, crate_name, override_spec);
     let unique_versions: std::collections::HashSet<&String> =
         all_versions.iter().map(|(_, resolved, _)| resolved).collect();
     let result = unique_versions.len() > 1;
@@ -1437,13 +1542,17 @@ fn has_multiple_resolved_versions(crate_dir: &Path, crate_name: &str) -> bool {
 
 /// Extract ALL versions of a crate from cargo metadata (for multi-version scenarios)
 /// Returns Vec<(spec, resolved_version, dependent_name)>
-fn extract_all_crate_versions(crate_dir: &Path, crate_name: &str) -> Vec<(String, String, String)> {
+fn extract_all_crate_versions(
+    crate_dir: &Path,
+    crate_name: &str,
+    override_spec: Option<(&str, &Path)>,
+) -> Vec<(String, String, String)> {
     let mut all_versions = Vec::new();
 
     debug!("extracting all versions of '{}' from cargo metadata", crate_name);
 
     // Run cargo metadata to get resolved dependencies
-    let output = match Command::new("cargo").args(["metadata", "--format-version=1"]).current_dir(crate_dir).output() {
+    let output = match cargo_metadata(crate_dir, override_spec) {
         Ok(o) => o,
         Err(e) => {
             debug!("failed to run cargo metadata: {}", e);
@@ -1634,3 +1743,7 @@ other-crate = { path = "/other/path" }
         assert!(content.contains("/rgb/path"), "Should have new rgb path");
     }
 }
+
+#[cfg(test)]
+#[path = "compile_test.rs"]
+mod regression_tests;
