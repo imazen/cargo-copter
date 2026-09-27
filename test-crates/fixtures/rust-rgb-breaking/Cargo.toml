@@ -12,7 +12,7 @@ keywords = ["rgb", "rgba", "bgra", "pixel", "color"]
 license = "MIT"
 categories = ["graphics", "rust-patterns", "multimedia::images"]
 edition = "2024"
-rust-version = "1.64"
+rust-version = "1.85"
 
 [features]
 # Since all pixel formats are enabled by default, because it has negligible impact on compilation time

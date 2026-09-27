@@ -12,111 +12,50 @@ use std::process::Command;
 #[test]
 #[ignore] // Requires network access to download load_image
 fn test_default_baseline_wip_output() {
-    // Run cargo-copter in default mode (no --test-versions)
-    // This should test:
-    // - Baseline: Published version from crates.io
-    // - WIP: Local version from --path
-    //
-    // Expected behavior:
-    // - Should produce 2 OfferedRows (baseline + WIP)
-    // - Baseline should be marked with "- baseline"
-    // - WIP should show regression
-
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let fixture_path = manifest_dir.join("test-crates/fixtures/rust-rgb-breaking");
-    let binary_path = manifest_dir.join("target/release/cargo-copter");
-
-    assert!(fixture_path.exists(), "Fixture path should exist: {:?}", fixture_path);
-    assert!(binary_path.exists(), "Binary should be built: {:?}", binary_path);
-
-    // Run WITHOUT --test-versions to use default baseline + WIP flow
-    let output = Command::new(&binary_path)
-        .arg("--path")
-        .arg(&fixture_path)
-        .arg("--dependents")
-        .arg("load_image:3.3.1")
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_cargo-copter"))
+        .args(["--path", fixture_path.to_str().unwrap(), "--dependents", "load_image:3.3.1"])
+        .arg("--staging-dir")
+        .arg(temp.path().join("staging"))
+        .current_dir(temp.path())
         .output()
         .expect("Failed to execute cargo-copter");
-
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("=== STDOUT ===\n{stdout}\n=== STDERR ===\n{stderr}");
 
-    println!("=== STDOUT ===\n{}", stdout);
-    println!("=== STDERR ===\n{}", stderr);
+    assert_eq!(stdout.matches("- baseline").count(), 1, "Exactly one baseline row");
+    assert_eq!(stdout.matches("│   Offered").count(), 1, "Exactly one table header");
+    assert_eq!(stdout.matches("COMPATIBILITY REPORT").count(), 1, "Exactly one summary");
+    assert!(stdout.contains("Total tested"));
+    assert!(stdout.find("- baseline").unwrap() < stdout.find("│ ✗").unwrap());
+    assert!(!stdout.lines().any(|line| line.starts_with("copter:")));
 
-    // Validate output structure
-
-    // 1. Should test load_image
-    assert!(stdout.contains("load_image") || stderr.contains("load_image"), "Should mention load_image in output");
-
-    // 2. Should have baseline row
-    assert!(stdout.contains("baseline"), "Should have baseline row marked with '- baseline'");
-
-    // 3. Should have WIP/this row
-    assert!(stdout.contains("this") || stdout.contains("0.8.91"), "Should have WIP row with 'this' or version number");
-
-    // 4. Should show two rows (baseline + WIP)
-    let baseline_row_count = stdout.matches("- baseline").count();
-    assert!(baseline_row_count >= 1, "Should have at least 1 baseline row (found {})", baseline_row_count);
-
-    // 5. Check if using legacy or multi-version path
-    let using_multi_version = stdout.contains("multi-version") || stderr.contains("multi-version");
-
-    if using_multi_version {
-        println!("✅ Using multi-version path (good!)");
-
-        // With multi-version, spec should be populated
-        assert!(!stdout.contains("│ ?        │"), "Spec field should not be '?' in multi-version mode");
-
-        // Should detect regression with multi-version testing
-        let has_regression = stdout.contains("REGRESSED") || stdout.contains("✗");
-        assert!(has_regression, "Multi-version path should detect regression (WIP breaks load_image)");
-    } else {
-        println!("⚠️  Using LEGACY path (but with spec extraction fixed!)");
-        println!("   Note: Spec field now properly extracted from Cargo.toml");
-
-        // Spec field should now be populated (no longer "?")
-        if stdout.contains("│ ?") {
-            println!("   ⚠️  WARNING: Spec field still shows '?' - extraction may have failed");
-        } else {
-            println!("   ✅ Spec field properly extracted");
-        }
-
-        // Legacy path FALSE POSITIVE: reports success when WIP actually breaks load_image
-        let has_regression = stdout.contains("REGRESSED") || stdout.contains("✗");
-
-        // Count PASSED markers to detect false positive
-        let passed_count = stdout.matches("PASSED ✓✓✓").count();
-
-        if !has_regression && passed_count >= 2 {
-            println!("   🐛 FALSE POSITIVE CONFIRMED:");
-            println!("      - Baseline: PASSED ✓✓✓");
-            println!("      - WIP:      PASSED ✓✓✓  🐛 WRONG!");
-            println!("      - Reality:  WIP breaks load_image (22 compile errors in cargo check)");
-            println!("      - Cause:    cargo build succeeds but cargo check fails");
-            println!("   ⚠️  CRITICAL: Do NOT use legacy path for production testing!");
-            println!("   ✅ SOLUTION: Always use --test-versions for accurate results");
-            println!("   📝 See: FALSE_POSITIVE_BUG.md for details");
-        } else if has_regression {
-            println!("   ⚠️  Regression detected (unexpected - cache state may vary)");
-            println!("   📝 Note: Fresh runs typically show false positive");
-        } else {
-            println!("   ⚠️  Unexpected output state - check manually");
-        }
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(temp.path().join("copter-report/report.json")).unwrap()).unwrap();
+    let rows = report["test_results"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "Both baseline and WIP must execute");
+    assert!(rows[0]["offered"].is_null());
+    let baseline = rows[0]["test"]["commands"].as_array().unwrap();
+    assert_eq!(baseline.len(), 3);
+    for (step, command) in baseline.iter().zip(["Fetch", "Check", "Test"]) {
+        assert_eq!(step["command"], command);
+        assert_eq!(step["result"]["passed"], true, "Baseline {command} failed: {step}");
     }
-
-    // 6. Validate basic structure regardless of path
-    assert!(stdout.contains("Summary") || stdout.contains("=== Summary ==="), "Should have summary section");
-    assert!(stdout.contains("Total:"), "Summary should show total count");
-
-    println!("\n✅ Default baseline + WIP test passed!");
-    println!("   - Baseline row: present");
-    println!("   - WIP row: present");
-    if using_multi_version {
-        println!("   - Path: multi-version (full ICT testing)");
-    } else {
-        println!("   - Path: legacy (basic compilation only)");
-    }
+    assert_eq!(rows[1]["baseline_passed"], true);
+    assert_eq!(rows[1]["offered"]["version"], "0.8.91");
+    assert_eq!(rows[1]["offered"]["forced"], true);
+    assert_eq!(rows[1]["primary"]["resolved_version"], "0.8.91");
+    assert_eq!(rows[1]["primary"]["resolved_source"], "Local");
+    let wip = rows[1]["test"]["commands"].as_array().unwrap();
+    assert_eq!(wip.len(), 2, "Stop after the actual WIP compile failure");
+    assert_eq!(wip[0]["command"], "Fetch");
+    assert_eq!(wip[0]["result"]["passed"], true);
+    assert_eq!(wip[1]["command"], "Check");
+    assert_eq!(wip[1]["result"]["passed"], false);
+    assert_eq!(report["summary"]["regressed"], 1);
 }
 
 #[test]
